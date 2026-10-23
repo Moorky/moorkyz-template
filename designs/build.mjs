@@ -2,13 +2,18 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
-import { designs } from "./catalog.mjs";
+import { designs, documentationThemes } from "./catalog.mjs";
+import { renderDocumentation, exportDocuments } from "./documentation.mjs";
 
 const directory = path.dirname(fileURLToPath(import.meta.url));
 const root = path.dirname(directory);
 const require = createRequire(import.meta.url);
 const { renderReadme } = require("../moorkyz");
 const args = process.argv.slice(2);
+if (args[0] === "docs") {
+  exportDocuments(args.slice(1));
+  process.exit(0);
+}
 if (args.some((arg) => !["--check", "--dry-run"].includes(arg))) {
   throw new Error("Usage: node designs/build.mjs [--check | --dry-run]");
 }
@@ -97,12 +102,21 @@ node moorkyz doctor</code></pre><p>Requires Node.js 24 LTS for the shared tools.
   return document(d, "landing", `<main id="main">${hero}${features}${start}</main>`);
 }
 function readmeEdition(d) {
+  if (documentationThemes.includes(d.art)) {
+    const index = designs.indexOf(d);
+    return renderDocumentation({
+      markdown: readme, theme: d.art, sourceName: "README.md", collectionId: d.id, scriptHref: "../assets/interactions.js",
+      rewriteHref: (href) => /^(?:[a-z][a-z0-9+.-]*:|#|\/)/i.test(href) ? href : rootLink + href,
+      links: [{ label: "All designs", href: "../index.html#collection" }, { label: "Landing page", href: "landing.html" }, { label: "Markdown", href: "../../README.md" }],
+      adjacent: [{ label: "Previous", href: `../${designs[(index + 19) % 20].id}/README.html` }, { label: "Next", href: `../${designs[(index + 1) % 20].id}/README.html` }],
+    });
+  }
   const navigation = chapters.map((chapter, i) => `<a href="#${chapter.id}"><span>${String(i + 1).padStart(2, "0")}</span>${chapter.title}</a>`).join("");
   return document(d, "readme", `<main id="main"><section class="readme-hero"><div><p class="eyebrow">The ${escape(d.name)} edition / README</p><h1>Moorkyz<br><em>Template.</em></h1><p class="hero-description">A practical foundation.<br>A direction of your own.</p><div class="readme-badges"><span>Node.js 24 LTS</span><span>No chosen stack</span><a href="../../README.md">Markdown source ${arrow}</a></div></div>${artwork(d)}</section><div class="doc-shell"><aside class="doc-sidebar"><p class="eyebrow">In this guide</p><nav class="doc-nav" aria-label="README chapters">${navigation}</nav><p class="doc-note">Complete repository documentation.<br>Different surface. Same foundation.</p><a class="text-link" href="landing.html">View the landing page ${arrow}</a></aside><article class="doc-body" aria-label="Complete README"><div class="doc-introduction">${introduction}</div>${chapters.map((chapter) => chapter.html).join("\n")}</article></div></main>`);
 }
 
 function showcase() {
-  const cards = designs.map((d) => `<article class="collection-card" data-category="${d.category}" data-tone="${d.tone}" data-name="${escape(`${d.name} ${d.note} ${d.category}`.toLowerCase())}"><div class="card-visual edition ${d.id.slice(3)}" style="${variables(d)}"><span class="card-index">${d.id.slice(0, 2)} / 20</span>${artwork(d, true)}<div class="mini-title">${d.title}</div><span class="preview-chip">${escape(d.category)} &middot; ${d.tone === "dark" ? "Dark" : "Light"}</span></div><div class="card-info"><div><h3>${escape(d.name)}</h3><p>${escape(d.note)}</p></div><button class="preview-button js-only" type="button" data-preview="${d.id}" aria-label="Preview ${escape(d.name)}">Preview ${arrow}</button></div><div class="card-links"><a href="${d.id}/landing.html" data-page-link="landing">Landing page ${arrow}</a><a href="${d.id}/README.html" data-page-link="readme">README ${arrow}</a></div></article>`).join("\n");
+  const cards = designs.map((d) => `<article class="collection-card" data-category="${d.category}" data-tone="${d.tone}" data-name="${escape(`${d.name} ${d.note} ${d.category}${documentationThemes.includes(d.art) ? " compact documentation docs" : ""}`.toLowerCase())}"><div class="card-visual edition ${d.id.slice(3)}" style="${variables(d)}"><span class="card-index">${d.id.slice(0, 2)} / 20</span>${artwork(d, true)}<div class="mini-title">${d.title}</div><span class="preview-chip">${escape(d.category)} &middot; ${d.tone === "dark" ? "Dark" : "Light"}</span></div><div class="card-info"><div><h3>${escape(d.name)}</h3><p>${escape(d.note)}</p></div><button class="preview-button js-only" type="button" data-preview="${d.id}" aria-label="Preview ${escape(d.name)}">Preview ${arrow}</button></div><div class="card-links"><a href="${d.id}/landing.html" data-page-link="landing">Landing page ${arrow}</a><a href="${d.id}/README.html" data-page-link="readme">${documentationThemes.includes(d.art) ? "Docs README" : "README"} ${arrow}</a></div></article>`).join("\n");
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="Twenty original design directions. Twenty README editions. Twenty landing pages. One open, stack-neutral Moorkyz template."><meta name="color-scheme" content="dark"><title>Moorkyz Template / Freedom, by design.</title><link rel="stylesheet" href="assets/designs.css"><link rel="stylesheet" href="assets/showcase.css"><script src="assets/interactions.js" defer></script><script src="assets/showcase.js" defer></script></head><body class="showcase"><a class="skip-link" href="#main">Skip to content</a>
 <header class="showcase-header"><a class="brand" href="./index.html">${marker}<span>Moorkyz<span class="brand-sub"> / Templates</span></span></a><nav aria-label="Main navigation"><a href="#collection">Collection</a><a href="#foundation">The foundation</a><a href="./README.md">A little guidance ${arrow}</a></nav><a class="header-cta" href="https://github.com/Moorky/moorkyz-template">Make it yours ${arrow}</a></header>

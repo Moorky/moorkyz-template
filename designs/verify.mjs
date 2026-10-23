@@ -5,7 +5,8 @@ import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { designs } from "./catalog.mjs";
+import { designs, documentationThemes } from "./catalog.mjs";
+import { verifyDocumentation } from "./verify-documentation.mjs";
 
 const directory = path.dirname(fileURLToPath(import.meta.url));
 const root = path.dirname(directory);
@@ -14,6 +15,8 @@ const freshness = spawnSync(process.execPath, [path.join(directory, "build.mjs")
 if (freshness.error) throw freshness.error;
 assert.equal(freshness.status, 0, freshness.stdout + freshness.stderr);
 assert.equal(designs.length, 20);
+assert.equal(documentationThemes.length, 5);
+assert.equal(new Set(documentationThemes).size, 5);
 assert.equal(new Set(designs.map((d) => d.art)).size, 20, "Artwork must be unique per direction.");
 assert.equal(new Set(designs.map((d) => d.title)).size, 20, "Each landing needs its own editorial direction.");
 assert.equal(new Set(designs.map((d) => d.description)).size, 20);
@@ -49,12 +52,18 @@ for (const d of designs) {
   landingHashes.add(hash(landing));
   for (const title of chapterTitles) assert.ok(readme.includes(`id="${slug(title)}"`), `${d.name}: missing chapter ${title}`);
   const article = readme.match(/<article class="doc-body"[^>]*>([\s\S]*?)<\/article>/)[1]
-    .replace(/<span class="chapter-number"[^>]*>\d+<\/span>/g, "");
+    .replace(/<span class="chapter-number"[^>]*>\d+<\/span>/g, "").replace(/<h1\b[^>]*>[\s\S]*?<\/h1>/, "");
   assert.equal(plainText(article), plainText(canonicalBody), `${d.name}: README text must be complete and unchanged.`);
   assert.doesNotMatch(readme.match(/<nav aria-label="Adjacent designs">([\s\S]*?)<\/nav>/)[1], /landing\.html/);
   assert.doesNotMatch(landing.match(/<nav aria-label="Adjacent designs">([\s\S]*?)<\/nav>/)[1], /README\.html/);
   assert.ok(readme.includes("node moorkyz help"), `${d.name}: README content is missing.`);
   assert.match(readme, /aria-label="Complete README"/);
+  if (documentationThemes.includes(d.art)) {
+    assert.match(readme, new RegExp(`data-documentation-theme="${d.art}"`));
+    assert.doesNotMatch(readme, /class="(?:readme-hero|art\b|light-toggle)/);
+    assert.match(readme, /<details class="mobile-outline"><summary>On this page<\/summary>/);
+    assert.match(readme, /@media print/);
+  } else assert.doesNotMatch(readme, /data-documentation-theme=/);
   assert.ok(css.includes(`.${d.id.slice(3)} .hero`), `${d.name}: missing individual layout treatment.`);
   assert.ok(css.includes(`.art-${d.art}`) || landing.includes(`class="art art-${d.art}"`), `${d.name}: missing artwork.`);
   for (const color of ["bg", "surface", "ink", "muted", "accent", "warm"]) assert.match(d[color], /^#[0-9a-f]{6}$/i);
@@ -116,7 +125,7 @@ for (const filename of pages) {
     links++;
   }
 }
-for (const name of ["designs.css", "showcase.css"]) {
+for (const name of ["designs.css", "showcase.css", "documentation.css"]) {
   const source = fs.readFileSync(path.join(directory, "assets", name), "utf8");
   assert.doesNotMatch(source, /@import|url\(/, "Styles must not fetch external assets.");
   assert.match(source, /@media\(max-width:760px\)/);
@@ -132,6 +141,7 @@ for (const name of ["interactions.js", "showcase.js"]) {
 }
 const showcase = fs.readFileSync(path.join(directory, "index.html"), "utf8");
 assert.equal([...showcase.matchAll(/class="collection-card"/g)].length, 20);
+assert.equal([...showcase.matchAll(/>Docs README /g)].length, 5);
 for (const copy of [
   showcase.match(/<p class="showcase-description">([\s\S]*?)<\/p>/)[1],
   showcase.match(/<div class="collection-heading">[\s\S]*?<p>([\s\S]*?)<\/p>/)[1],
@@ -142,3 +152,4 @@ assert.equal(fs.readdirSync(path.join(root, ".template", "project-types", "helpe
 console.log(`PASS: exactly 20 unique README editions, 20 unique landings and one showcase; ${links} local links/assets checked.`);
 console.log(`PASS: ${chapterTitles.length} complete chapters per README, semantic landmarks, all 100 palette contrast pairs >= 4.5:1.`);
 console.log("PASS: generated freshness, reduced-motion/mobile styles, local-only assets and dependency-free script syntax.");
+verifyDocumentation();

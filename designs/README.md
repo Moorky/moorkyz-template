@@ -11,6 +11,56 @@ The canonical [root README](../README.md) and its [HTML edition](../README.html)
 remain the baseline documentation. These are additional visual editions, not
 replacements, product runtimes or deployment configuration.
 
+## Five everyday documentation themes
+
+Five of the twenty README editions are deliberately **compact documentation
+themes**, not miniature landing pages. They have small headers, immediate
+content, restrained section navigation, readable code and print styles.
+No hero artwork, marketing blocks, light controls or motion compete with the
+documentation. The twenty landing pages and fifteen expressive README editions
+keep their original visual layouts.
+
+| Theme | Best fit | Preview |
+|---|---|---|
+| `paper` | Warm, quiet editorial notes; serif headings | [Paper README](02-paper/README.html) |
+| `glacier` | Clean blue-white guides; subtle content surface | [Glacier README](07-glacier/README.html) |
+| `mono` | Crisp, neutral technical references | [Mono README](08-mono/README.html) |
+| `vector` | Ordered engineering documentation; restrained teal | [Vector README](15-vector/README.html) |
+| `cabinet` | Polished file-by-file reference; warm indexed navigation | [Cabinet README](18-cabinet/README.html) |
+
+Choose one theme and use it for every document in a project. The existing
+generator can render multiple Markdown files in one invocation:
+
+```powershell
+node .\designs\build.mjs docs --theme paper --out html-docs README.md docs\INFRASTRUCTURE.md .template\copilot-settings\README.md
+```
+
+For a documentation folder containing twenty files (or any other number):
+
+```powershell
+$files = @(Get-ChildItem -LiteralPath .\docs -Filter *.md -File -Recurse | ForEach-Object { $_.FullName })
+node .\designs\build.mjs docs --theme paper --out html-docs @files
+```
+
+Run from the project root with Node.js 24 LTS. Paths must stay inside that
+working directory; symlinks/junctions are refused. Outputs preserve source
+subdirectories, so different files named `README.md` do not collide.
+Selected Markdown links become links to their generated HTML counterparts;
+unselected local links point back to the original files. Other assets are not
+copied. Source files are never changed.
+
+Exported HTML embeds its stylesheet and needs no JavaScript, framework, font,
+server or shared asset folder. Copying an HTML file elsewhere still requires
+reviewing its links to other documents/assets. The command uses the existing
+lightweight root Markdown renderer: headings, paragraphs, fenced/inline code
+and links, not full CommonMark; lists/tables keep the baseline text rendering.
+
+An identical rerun leaves files alone. Different existing output is refused
+before any writes; review it and explicitly add `--overwrite` to regenerate
+only the selected HTML files. `--check` verifies without writing; `--dry-run`
+does not read source/config files or create anything. No output directory may
+be the project root. Use `docs --help` for the command summary.
+
 ## Browse and use
 
 - Search by name or descriptive terms; filter Quiet, Cosmic, Chromatic,
@@ -90,6 +140,11 @@ The regular maintenance runner discovers the read-only
 [design checkup](../.template/maintenance/helpers/checkups/06-design-collection.ps1).
 If an adopted project removes this optional collection, remove that checkup
 with it rather than leaving a broken verification reference.
+Its [documentation regressions](verify-documentation.mjs) render twenty source
+files in each of the five compact themes (100 real outputs), entirely in
+disposable directories. They check source preservation, nested links/anchors,
+standalone styling, unchanged reruns, check/dry-run modes and refusal of unsafe
+inputs or conflicting outputs.
 
 ## Reference study
 

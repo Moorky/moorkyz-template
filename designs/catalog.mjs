@@ -20,3 +20,5 @@ export const designs = [
   { id: "19-liminal", name: "Liminal", category: "Chromatic", tone: "light", label: "An opening, not an ending", title: "Between the idea<br>and <em>the possible.</em>", description: "A threshold into your next project. Enough structure to feel grounded. Enough space to step somewhere new.", note: "Impossible architecture / pale horizon / dimensional calm", bg: "#eaf0f7", surface: "#f9fcff", ink: "#2d3d56", muted: "#586982", accent: "#4c639a", warm: "#ab5b3b", art: "liminal" },
   { id: "20-continuum", name: "Continuum", category: "Cosmic", tone: "dark", label: "Beyond the default", title: "One beginning.<br><em>No fixed horizon.</em>", description: "The most interesting part is what comes after the starting point. Take a reliable foundation somewhere entirely your own.", note: "Eclipse horizon / orange corona / deep violet space", bg: "#0d0d1a", surface: "#181729", ink: "#f7f3ff", muted: "#bbb4ce", accent: "#d3b8ff", warm: "#ffc299", art: "continuum" },
 ];
+
+export const documentationThemes = ["paper", "glacier", "mono", "vector", "cabinet"];

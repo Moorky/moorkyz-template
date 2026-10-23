@@ -70,7 +70,9 @@ Nothing is written to log files.
   exactly twenty complete README editions, twenty distinct landings and the
   final showcase, including generated freshness, unchanged README text, local
   links/anchors, semantic landmarks, local-only assets and palette contrast.
-  It never regenerates pages. Browser/keyboard review remains separate; see
+  It also verifies five compact documentation themes against twenty Markdown
+  files each, using disposable outputs and unchanged-source snapshots. It never
+  regenerates repository pages. Browser/keyboard review remains separate; see
   the [collection guide](../../designs/README.md). Remove this checkup with the
   optional collection if an adopted project does not retain it.
 

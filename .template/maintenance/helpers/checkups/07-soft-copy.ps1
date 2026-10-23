@@ -68,7 +68,7 @@ function fixture() {
 function invoke(engine, f, files, flags = "", target = f.target, custom) {
   const select = files === null ? "" : ` -File @(${files.map(quote).join(",")})`;
   const command = custom || `& ${quote(f.entry)} -NoGui -TargetDirectory ${quote(target)}${select} ${flags}`;
-  const script = `$ErrorActionPreference='Stop'; Set-StrictMode -Version Latest; ${command}`;
+  const script = `$ErrorActionPreference='Stop'; Set-StrictMode -Version Latest; try { ${command}; exit 0 } catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }`;
   const result = spawnSync(engine, [
     "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
     ...(process.platform === "win32" ? ["-STA"] : []),
@@ -86,7 +86,17 @@ function failure(result, pattern) {
 function reports(f) {
   const directory = path.join(f.source, ".moorkyz", "soft-copy");
   if (!fs.existsSync(directory)) return [];
-  return fs.readdirSync(directory).map((name) => JSON.parse(fs.readFileSync(path.join(directory, name), "utf8")));
+  return fs.readdirSync(directory).filter((name) => /^conflicts-.*\.json$/.test(name))
+    .map((name) => JSON.parse(fs.readFileSync(path.join(directory, name), "utf8")));
+}
+function recoveryFiles(f) {
+  const directory = path.join(f.source, ".moorkyz", "soft-copy");
+  return fs.existsSync(directory) ? fs.readdirSync(directory).filter((name) => /^recovery-.*\.json$/.test(name))
+    .map((name) => path.join(directory, name)) : [];
+}
+function revert(engine, f, recovery, flags = "", target = f.target) {
+  return invoke(engine, f, null, "", target,
+    `& ${quote(f.entry)} -TargetDirectory ${quote(target)} -Revert ${quote(recovery)} ${flags}`);
 }
 function unchangedFailure(engine, f, files, flags, target, pattern) {
   const before = snapshot(f.directory);
@@ -102,6 +112,249 @@ try {
     assert.deepEqual(snapshot(f.directory), before);
     success(invoke(engine, f, ["fresh.txt", "nested/binary.bin"], "-WhatIf"));
     assert.deepEqual(snapshot(f.directory), before);
+    groups++;
+
+    f = fixture();
+    write(path.join(f.target, "conflict.txt"), "preserved conflict");
+    const beforeCopy = snapshot(f.target);
+    success(invoke(engine, f, ["fresh.txt", "nested/binary.bin", "conflict.txt"]));
+    let recovery = recoveryFiles(f)[0];
+    let journal = JSON.parse(fs.readFileSync(recovery));
+    assert.equal(journal.status, "ready");
+    assert.equal(journal.files.length, 2);
+    before = snapshot(f.directory);
+    success(revert(engine, f, recovery, "-WhatIf"));
+    success(revert(engine, f, "missing-snapshot", "-DryRun", "missing-target"));
+    assert.deepEqual(snapshot(f.directory), before, "Revert preview/dry run changed files.");
+    success(revert(engine, f, recovery));
+    assert.deepEqual(snapshot(f.target), beforeCopy);
+    assert.equal(JSON.parse(fs.readFileSync(recovery)).status, "reverted");
+    assert.equal(reports(f).length, 1, "Revert changed the original conflict report.");
+    before = snapshot(f.directory);
+    failure(revert(engine, f, recovery), /not available/);
+    assert.deepEqual(snapshot(f.directory), before, "Repeated revert changed files.");
+    groups++;
+
+    f = fixture();
+    for (const [name, bytes] of [
+      ["conflict.txt", "original longer contents"], ["empty.txt", "not empty before"],
+      ["unicode.txt", Buffer.from([0xff, 0xfe, 65, 0])], ["nested/binary.bin", Buffer.from([255, 5, 0])],
+    ]) write(path.join(f.target, name), bytes);
+    const oldTime = new Date("2001-02-03T04:05:06.000Z");
+    fs.utimesSync(path.join(f.target, "conflict.txt"), oldTime, oldTime);
+    const forceBefore = snapshot(f.target);
+    success(invoke(engine, f, ["conflict.txt", "empty.txt", "unicode.txt", "nested/binary.bin", "fresh.txt"], "-ForceCopy"));
+    recovery = recoveryFiles(f)[0];
+    success(revert(engine, f, recovery));
+    assert.deepEqual(snapshot(f.target), forceBefore, "Force revert did not restore exact original bytes.");
+    assert.equal(fs.statSync(path.join(f.target, "conflict.txt")).mtimeMs, oldTime.getTime());
+    assert.equal(fs.readFileSync(path.join(f.source, "empty.txt")).length, 0);
+    groups++;
+
+    f = fixture();
+    write(path.join(f.target, "conflict.txt"), "old contents");
+    success(invoke(engine, f, ["conflict.txt"]));
+    assert.equal(recoveryFiles(f).length, 0, "An unchanged copy should not enable recovery.");
+    groups++;
+
+    f = fixture();
+    write(path.join(f.target, "conflict.txt"), "old contents");
+    success(invoke(engine, f, ["conflict.txt", "fresh.txt"], "-ForceCopy"));
+    recovery = recoveryFiles(f)[0];
+    write(path.join(f.target, "fresh.txt"), "user edited later");
+    before = snapshot(f.directory);
+    failure(revert(engine, f, recovery), /changed since copy/);
+    assert.deepEqual(snapshot(f.directory), before, "Stale revert modified part of the target.");
+    write(path.join(f.target, "fresh.txt"), fs.readFileSync(path.join(f.source, "fresh.txt")));
+    fs.unlinkSync(path.join(f.target, "conflict.txt"));
+    before = snapshot(f.directory);
+    failure(revert(engine, f, recovery), /removed since copy/);
+    assert.deepEqual(snapshot(f.directory), before);
+    write(path.join(f.target, "conflict.txt"), fs.readFileSync(path.join(f.source, "conflict.txt")));
+    success(revert(engine, f, recovery));
+    assert.equal(fs.readFileSync(path.join(f.target, "conflict.txt"), "utf8"), "old contents");
+    groups++;
+
+    f = fixture();
+    write(path.join(f.source, "aa", "new.txt"), "a");
+    write(path.join(f.source, "bb", "new.txt"), "b");
+    fs.mkdirSync(path.join(f.target, "nested"));
+    success(invoke(engine, f, ["aa/new.txt", "bb/new.txt", "nested/binary.bin"]));
+    recovery = recoveryFiles(f)[0];
+    write(path.join(f.target, "aa", "user.txt"), "later unrelated work");
+    success(revert(engine, f, recovery));
+    assert.equal(fs.readFileSync(path.join(f.target, "aa", "user.txt"), "utf8"), "later unrelated work");
+    assert.ok(!fs.existsSync(path.join(f.target, "aa", "new.txt")));
+    assert.ok(!fs.existsSync(path.join(f.target, "bb")), "Empty new sibling directory was not removed.");
+    assert.ok(fs.statSync(path.join(f.target, "nested")).isDirectory(), "Pre-existing directory was removed.");
+    groups++;
+
+    f = fixture();
+    write(path.join(f.target, "conflict.txt"), "old contents");
+    success(invoke(engine, f, ["conflict.txt", "fresh.txt"], "-ForceCopy"));
+    recovery = recoveryFiles(f)[0];
+    const originalJournal = fs.readFileSync(recovery);
+    for (const mutate of [
+      (j) => { j.version = 2; },
+      (j) => { j.target = f.directory; },
+      (j) => { j.files[0].name = "../sentinel.txt"; },
+      (j) => { j.files[0].name = ".git/config"; },
+      (j) => { j.files[0].name = ".git /config"; },
+      (j) => { j.files[0].state = "writing"; },
+      (j) => { j.files[0].before = Buffer.from("corrupt backup").toString("base64"); },
+      (j) => { j.files.push({ ...j.files[0] }); },
+      (j) => { j.files[0].afterHash = "invalid"; },
+    ]) {
+      journal = JSON.parse(originalJournal);
+      mutate(journal);
+      fs.writeFileSync(recovery, JSON.stringify(journal));
+      before = snapshot(f.directory);
+      failure(revert(engine, f, recovery));
+      assert.deepEqual(snapshot(f.directory), before, "Invalid recovery changed files.");
+    }
+    fs.writeFileSync(recovery, originalJournal);
+    const wrongTarget = path.join(f.directory, "other repository");
+    fs.mkdirSync(wrongTarget);
+    before = snapshot(f.directory);
+    failure(revert(engine, f, recovery, "", wrongTarget), /does not match/);
+    assert.deepEqual(snapshot(f.directory), before);
+    success(revert(engine, f, recovery));
+    groups++;
+
+    f = fixture();
+    const partialCore = path.join(path.dirname(f.entry), "helpers", "CopyCore.ps1");
+    const blockedFile = path.join(f.target, "nested", "binary.bin");
+    const partial = `
+      . ${quote(partialCore)};
+      $plan = New-TemplateCopyPlan -Root ${quote(f.source)} -TargetDirectory ${quote(f.target)} -File @('fresh.txt','nested/binary.bin');
+      $global:originalPathCheck = \${function:Assert-CopyPath}; $global:destinationChecks = 0;
+      function Assert-CopyPath([string]$Path) {
+        & $global:originalPathCheck $Path;
+        if ($Path -eq ${quote(blockedFile)}) {
+          $global:destinationChecks++;
+          if ($global:destinationChecks -eq 2) {
+            [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($Path));
+            [IO.File]::WriteAllText($Path,'other writer');
+          }
+        }
+      }
+      try { Invoke-TemplateCopyPlan $plan; throw 'Expected injected copy failure' }
+      catch { if (-not $_.Exception.Data.Contains('RecoveryPath')) { throw }; 'PASS: recoverable partial copy failure' }
+    `;
+    success(invoke(engine, f, null, "", f.target, partial));
+    assert.ok(fs.existsSync(path.join(f.target, "fresh.txt")));
+    recovery = recoveryFiles(f)[0];
+    assert.equal(JSON.parse(fs.readFileSync(recovery)).status, "failed");
+    success(revert(engine, f, recovery));
+    assert.ok(!fs.existsSync(path.join(f.target, "fresh.txt")));
+    assert.equal(fs.readFileSync(blockedFile, "utf8"), "other writer", "Revert deleted a file it did not create.");
+    groups++;
+
+    f = fixture();
+    write(path.join(f.target, "conflict.txt"), "original");
+    success(invoke(engine, f, ["conflict.txt"], "-ForceCopy"));
+    const firstRecovery = recoveryFiles(f)[0];
+    write(path.join(f.source, "conflict.txt"), "second version");
+    success(invoke(engine, f, ["conflict.txt"], "-ForceCopy"));
+    const secondRecovery = recoveryFiles(f).find((filename) => filename !== firstRecovery);
+    before = snapshot(f.directory);
+    failure(revert(engine, f, firstRecovery), /changed since copy/);
+    assert.deepEqual(snapshot(f.directory), before);
+    success(revert(engine, f, secondRecovery));
+    assert.equal(fs.readFileSync(path.join(f.target, "conflict.txt"), "utf8"), "new\n");
+    success(revert(engine, f, firstRecovery));
+    assert.equal(fs.readFileSync(path.join(f.target, "conflict.txt"), "utf8"), "original");
+    groups++;
+
+    f = fixture();
+    success(invoke(engine, f, ["fresh.txt"]));
+    recovery = recoveryFiles(f)[0];
+    before = snapshot(f.directory);
+    const lockCore = path.join(path.dirname(f.entry), "helpers", "CopyCore.ps1");
+    const locked = `
+      . ${quote(lockCore)}; $lock = Open-CopyRecoveryLock ${quote(recovery)};
+      try { Invoke-TemplateRevertPlan (New-TemplateRevertPlan ${quote(f.source)} ${quote(f.target)} ${quote(recovery)}) }
+      finally { $lock.Dispose() }
+    `;
+    failure(invoke(engine, f, null, "", f.target, locked));
+    assert.deepEqual(snapshot(f.directory), before, "Concurrent revert changed files.");
+    success(revert(engine, f, recovery));
+    groups++;
+
+    f = fixture();
+    const boundaryCore = path.join(path.dirname(f.entry), "helpers", "CopyCore.ps1");
+    const boundary = `
+      . ${quote(boundaryCore)};
+      $plan = New-TemplateCopyPlan -Root ${quote(f.source)} -TargetDirectory ${quote(f.target)} -File fresh.txt;
+      $global:saveJson = \${function:Write-CopyJson}; $global:injected = $false;
+      function Write-CopyJson([string]$Path, $Value, [switch]$New) {
+        if ($Value.PSObject.Properties['status'] -and $Value.files[0].state -eq 'writing' -and -not $global:injected) {
+          $global:injected = $true; throw 'Injected journal-write failure before file data';
+        }
+        & $global:saveJson -Path $Path -Value $Value -New:$New;
+      }
+      try { Invoke-TemplateCopyPlan $plan; throw 'Expected copy-boundary failure' }
+      catch { if (-not $_.Exception.Data.Contains('RecoveryPath')) { throw }; 'PASS: boundary recovery recorded' }
+    `;
+    success(invoke(engine, f, null, "", f.target, boundary));
+    assert.equal(fs.statSync(path.join(f.target, "fresh.txt")).size, 0);
+    recovery = recoveryFiles(f)[0];
+    success(revert(engine, f, recovery));
+    assert.ok(!fs.existsSync(path.join(f.target, "fresh.txt")), "An aborted new file was not removed.");
+    groups++;
+
+    f = fixture();
+    const directoryCore = path.join(path.dirname(f.entry), "helpers", "CopyCore.ps1");
+    const failedDirectory = path.join(f.target, "nested");
+    const directoryFailure = `
+      . ${quote(directoryCore)};
+      $plan = New-TemplateCopyPlan -Root ${quote(f.source)} -TargetDirectory ${quote(f.target)} -File @('fresh.txt','nested/binary.bin');
+      $global:checkPath = \${function:Assert-CopyPath};
+      function Assert-CopyPath([string]$Path) {
+        & $global:checkPath $Path;
+        if ($Path -eq ${quote(failedDirectory)}) { [IO.File]::WriteAllText($Path,'directory blocker') }
+      }
+      try { Invoke-TemplateCopyPlan $plan; throw 'Expected directory failure' }
+      catch { if (-not $_.Exception.Data.Contains('RecoveryPath')) { throw }; 'PASS: directory failure did not claim ownership' }
+    `;
+    success(invoke(engine, f, null, "", f.target, directoryFailure));
+    recovery = recoveryFiles(f)[0];
+    assert.deepEqual(JSON.parse(fs.readFileSync(recovery)).directories, [], "Failed directory creation claimed ownership.");
+    fs.unlinkSync(failedDirectory);
+    fs.mkdirSync(failedDirectory);
+    success(revert(engine, f, recovery));
+    assert.ok(fs.statSync(failedDirectory).isDirectory(), "Revert removed a later directory it never created.");
+    groups++;
+
+    f = fixture();
+    write(path.join(f.target, "conflict.txt"), "original first file");
+    write(path.join(f.target, "empty.txt"), "original second file");
+    success(invoke(engine, f, ["conflict.txt", "empty.txt"], "-ForceCopy"));
+    recovery = recoveryFiles(f)[0];
+    const retryCore = path.join(path.dirname(f.entry), "helpers", "CopyCore.ps1");
+    const secondFile = path.join(f.target, "empty.txt");
+    const retry = `
+      . ${quote(retryCore)};
+      $plan = New-TemplateRevertPlan ${quote(f.source)} ${quote(f.target)} ${quote(recovery)};
+      $global:checkPath = \${function:Assert-CopyPath}; $global:undoChecks = 0;
+      function Assert-CopyPath([string]$Path) {
+        & $global:checkPath $Path;
+        if ($Path -eq ${quote(secondFile)}) {
+          $global:undoChecks++;
+          if ($global:undoChecks -eq 2) { [IO.File]::WriteAllText($Path,'edited just before second restore') }
+        }
+      }
+      Invoke-TemplateRevertPlan $plan;
+    `;
+    failure(invoke(engine, f, null, "", f.target, retry), /changed before revert/);
+    journal = JSON.parse(fs.readFileSync(recovery));
+    assert.equal(journal.status, "reverting");
+    assert.equal(journal.files[0].state, "reverted");
+    write(path.join(f.target, "conflict.txt"), "new edit after first restore");
+    write(secondFile, "");
+    success(revert(engine, f, recovery));
+    assert.equal(fs.readFileSync(path.join(f.target, "conflict.txt"), "utf8"), "new edit after first restore");
+    assert.equal(fs.readFileSync(secondFile, "utf8"), "original second file");
     groups++;
 
     f = fixture();
@@ -232,6 +485,35 @@ try {
     groups++;
 
     if (process.platform === "win32") {
+      for (const kind of ["hardlink", "junction", "readonly"]) {
+        f = fixture();
+        success(invoke(engine, f, ["fresh.txt", "nested/binary.bin"]));
+        recovery = recoveryFiles(f)[0];
+        const outside = path.join(f.directory, "outside recovery");
+        fs.mkdirSync(outside);
+        const outsideFile = path.join(outside, "sentinel.txt");
+        write(outsideFile, "preserve outside");
+        const fresh = path.join(f.target, "fresh.txt");
+        if (kind === "hardlink") {
+          fs.unlinkSync(fresh);
+          fs.linkSync(outsideFile, fresh);
+        } else if (kind === "junction") {
+          fs.unlinkSync(path.join(f.target, "nested", "binary.bin"));
+          fs.rmdirSync(path.join(f.target, "nested"));
+          fs.symlinkSync(outside, path.join(f.target, "nested"), "junction");
+        } else {
+          success(invoke(engine, f, null, "", f.target, `(Get-Item -LiteralPath ${quote(fresh)}).IsReadOnly=$true`));
+        }
+        before = snapshot(f.directory);
+        failure(revert(engine, f, recovery), kind === "readonly" ? /read-only/ : /link|junction/);
+        assert.deepEqual(snapshot(f.directory), before, "Unsafe revert modified files.");
+        assert.equal(fs.readFileSync(outsideFile, "utf8"), "preserve outside");
+        if (kind === "readonly") {
+          success(invoke(engine, f, null, "", f.target, `(Get-Item -LiteralPath ${quote(fresh)}).IsReadOnly=$false`));
+        }
+      }
+      groups++;
+
       f = fixture();
       write(path.join(f.target, "conflict.txt"), "readonly");
       success(invoke(engine, f, null, "", f.target, `(Get-Item -LiteralPath ${quote(path.join(f.target, "conflict.txt"))}).IsReadOnly=$true`));
@@ -274,10 +556,13 @@ try {
         function Assert($condition, $message) { if (-not $condition) { throw $message } }
         $global:confirmTestAnswer = $false;
         function global:Confirm-TemplateOverwrite { return $global:confirmTestAnswer }
+        $global:revertTestAnswer = $false;
+        function global:Confirm-TemplateRevert { return $global:revertTestAnswer }
         $ui = New-TemplateCopyForm -Root ${quote(f.source)};
         try {
           Assert (-not $ui.Force.Checked) 'Force must default off';
           Assert ($ui.Files.CheckedItems.Count -eq 0) 'Files must default unchecked';
+          Assert (-not $ui.Revert.Enabled) 'Revert must default disabled';
           $ui.Form.Show(); [Windows.Forms.Application]::DoEvents();
           $ui.All.PerformClick(); Assert ($ui.Files.CheckedItems.Count -eq $ui.Files.Items.Count) 'Select all';
           $ui.None.PerformClick(); Assert ($ui.Files.CheckedItems.Count -eq 0) 'Select none';
@@ -287,12 +572,25 @@ try {
           $ui.Files.SetItemChecked($ui.Files.Items.IndexOf('conflict.txt'), $true);
           $ui.Copy.PerformClick(); Assert ($ui.Status.Text -like 'DONE*preserved: 1*') $ui.Status.Text;
           Assert ([IO.File]::ReadAllText(${quote(path.join(f.target, "conflict.txt"))}) -eq 'GUI old value') 'GUI normal mode overwrote';
+          Assert (-not $ui.Revert.Enabled) 'Unchanged copy must not enable revert';
           $ui.Force.Checked = $true;
           $ui.Copy.PerformClick(); Assert ($ui.Status.Text -like 'Cancelled*') $ui.Status.Text;
           Assert ([IO.File]::ReadAllText(${quote(path.join(f.target, "conflict.txt"))}) -eq 'GUI old value') 'GUI cancel overwrote';
           $global:confirmTestAnswer = $true;
           $ui.Copy.PerformClick(); Assert ($ui.Status.Text -like 'DONE*replaced: 1*') $ui.Status.Text;
           Assert ([IO.File]::ReadAllText(${quote(path.join(f.target, "conflict.txt"))}) -eq "new\`n") 'GUI force did not replace';
+          Assert $ui.Revert.Enabled 'Copy must enable revert';
+          $ui.Target.Text = 'not the original target';
+          $ui.Revert.PerformClick(); Assert ($ui.Status.Text -like 'Revert cancelled*') $ui.Status.Text;
+          Assert $ui.Revert.Enabled 'Cancelled revert must remain available';
+          $global:revertTestAnswer = $true;
+          [IO.File]::WriteAllText(${quote(path.join(f.target, "conflict.txt"))},'later edit');
+          $ui.Revert.PerformClick(); Assert ($ui.Status.Text -like 'FAILED*changed since copy*') $ui.Status.Text;
+          Assert $ui.Revert.Enabled 'Refused revert must remain available';
+          [IO.File]::WriteAllText(${quote(path.join(f.target, "conflict.txt"))},"new\`n");
+          $ui.Revert.PerformClick(); Assert ($ui.Status.Text -like 'REVERTED*Restored: 1*') $ui.Status.Text;
+          Assert (-not $ui.Revert.Enabled) 'Successful revert must disable button';
+          Assert ([IO.File]::ReadAllText(${quote(path.join(f.target, "conflict.txt"))}) -eq 'GUI old value') 'GUI revert did not restore';
           'PASS: GUI target input, selections, visible errors, normal copy and force cancel/confirm.';
         } finally { $ui.Form.Close(); $ui.Form.Dispose() }
       `;

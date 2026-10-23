@@ -81,7 +81,9 @@ Nothing is written to log files.
   Unicode and binary data), opt-in force replacements, previews and path/link
   refusal in disposable template/target directories. On Windows it also drives
   the actual GUI controls and launcher, including force cancellation and
-  confirmation. It never copies into an existing user repository.
+  confirmation, plus recovery previews, exact restoration, safe removal of
+  copy-created files/directories, later-edit refusal and partial-copy recovery.
+  It never copies into or reverts an existing user repository.
 
 ## Safe modes
 

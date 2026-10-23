@@ -2,6 +2,7 @@
 [CmdletBinding()]
 param([switch]$DryRun)
 if ($DryRun) { Write-Host '[DRY RUN] Copy helpers loaded; no files accessed.'; return }
+. (Join-Path $PSScriptRoot 'CopyUndo.ps1')
 
 function Assert-CopyPath([string]$Path) {
     $current = [IO.Path]::GetFullPath($Path)
@@ -56,17 +57,11 @@ function ConvertTo-CopyContent([byte[]]$Bytes) {
     [pscustomobject]@{ Content = [Convert]::ToBase64String($Bytes); Encoding = 'base64' }
 }
 
-function New-TemplateCopyPlan {
-    param(
-        [string]$Root,
-        [string]$TargetDirectory,
-        [string[]]$File,
-        [switch]$ForceCopy
-    )
+function Get-CopyTargetRoot([string]$Root, [string]$TargetDirectory) {
     if ([string]::IsNullOrWhiteSpace($TargetDirectory)) { throw 'Choose an existing target repository directory.' }
-    if (-not $File -or -not $File.Count) { throw 'Select at least one file.' }
     $rootPath = [IO.Path]::GetFullPath($Root).TrimEnd('\', '/')
     $target = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($TargetDirectory)
+    if ($target -eq [IO.Path]::GetPathRoot($target)) { throw 'Source and target must be separate, non-overlapping directories.' }
     $target = [IO.Path]::GetFullPath($target).TrimEnd('\', '/')
     $comparison = if ($env:OS -eq 'Windows_NT') { [StringComparison]::OrdinalIgnoreCase } else { [StringComparison]::Ordinal }
     $separator = [IO.Path]::DirectorySeparatorChar
@@ -78,6 +73,19 @@ function New-TemplateCopyPlan {
     Assert-CopyPath $rootPath
     Assert-CopyPath $target
     if (-not (Test-Path -LiteralPath $target -PathType Container)) { throw "Target directory does not exist: $target" }
+    $target
+}
+
+function New-TemplateCopyPlan {
+    param(
+        [string]$Root,
+        [string]$TargetDirectory,
+        [string[]]$File,
+        [switch]$ForceCopy
+    )
+    $target = Get-CopyTargetRoot $Root $TargetDirectory
+    if (-not $File -or -not $File.Count) { throw 'Select at least one file.' }
+    $rootPath = [IO.Path]::GetFullPath($Root).TrimEnd('\', '/')
     $comparer = if ($env:OS -eq 'Windows_NT') { [StringComparer]::OrdinalIgnoreCase } else { [StringComparer]::Ordinal }
     $available = New-Object 'System.Collections.Generic.Dictionary[string,string]' $comparer
     foreach ($name in @(Get-TemplateCopyFiles $rootPath)) {
@@ -105,12 +113,14 @@ function New-TemplateCopyPlan {
         $bytes = [IO.File]::ReadAllBytes($source)
         $existing = Test-Path -LiteralPath $destination
         $previous = $null
+        $lastWrite = $null
         $replace = $false
         if ($existing) {
             if (-not (Test-Path -LiteralPath $destination -PathType Leaf)) {
                 throw "A directory blocks a destination file: $destination"
             }
             $previous = [IO.File]::ReadAllBytes($destination)
+            $lastWrite = [IO.File]::GetLastWriteTimeUtc($destination).ToString('O')
             $identical = [Convert]::ToBase64String($bytes) -ceq [Convert]::ToBase64String($previous)
             $replace = $ForceCopy -and -not $identical
             if ($replace -and ((Get-Item -LiteralPath $destination -Force).Attributes -band [IO.FileAttributes]::ReadOnly)) {
@@ -130,6 +140,7 @@ function New-TemplateCopyPlan {
         $entry = [pscustomobject]@{
             Source = $source; Destination = $destination; Bytes = $bytes
             Previous = $previous; Existing = $existing; Replace = $replace
+            Name = $name.Replace('\', '/'); LastWrite = $lastWrite
         }
         $entries.Add($entry)
         if (-not $existing -or $replace) { $copies.Add($entry) }
@@ -145,7 +156,7 @@ function New-TemplateCopyPlan {
         $reportParent = Split-Path -Parent $reportParent
     }
     [pscustomobject]@{
-        Target = $target; Entries = $entries; Copies = $copies; Conflicts = $conflicts
+        Root = $rootPath; Target = $target; Entries = $entries; Copies = $copies; Conflicts = $conflicts
         ReportDirectory = $reportDirectory
     }
 }
@@ -172,47 +183,98 @@ function Invoke-TemplateCopyPlan($Plan) {
     [void][IO.Directory]::CreateDirectory($Plan.ReportDirectory)
     $filename = 'conflicts-{0}-{1}.json' -f [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssfffZ'), [Guid]::NewGuid().ToString('N')
     $report = Join-Path $Plan.ReportDirectory $filename
-    $json = ConvertTo-Json -InputObject @($Plan.Conflicts.ToArray()) -Depth 4
-    $reportBytes = (New-Object Text.UTF8Encoding($false)).GetBytes($json)
-    $stream = [IO.File]::Open($report, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
-    try { $stream.Write($reportBytes, 0, $reportBytes.Length) }
-    finally { $stream.Dispose() }
+    Write-CopyJson -Path $report -Value @($Plan.Conflicts.ToArray()) -New
     Write-Host "Content-pair snapshot saved before copying: $report"
+    $recovery = $null
+    $recoveryPath = $null
+    $recoveryLock = $null
+    if ($Plan.Copies.Count) {
+        $recoveryPath = Join-Path $Plan.ReportDirectory ($filename.Replace('conflicts-', 'recovery-'))
+        $recovery = [pscustomobject]@{
+            version = 1; source = $Plan.Root; target = $Plan.Target; status = 'copying'
+            directories = @()
+            files = @(foreach ($entry in $Plan.Copies) {
+                [pscustomobject]@{
+                    name = $entry.Name; existed = [bool]$entry.Existing
+                    before = if ($entry.Existing) { [Convert]::ToBase64String($entry.Previous) } else { $null }
+                    beforeHash = if ($entry.Existing) { Get-CopyByteHash $entry.Previous } else { $null }
+                    lastWrite = $entry.LastWrite
+                    afterHash = Get-CopyByteHash $entry.Bytes
+                    state = 'pending'
+                }
+            })
+        }
+        Write-CopyJson -Path $recoveryPath -Value $recovery -New
+        $recoveryLock = Open-CopyRecoveryLock $recoveryPath
+        Write-Host "Recovery snapshot saved before copying: $recoveryPath"
+    }
     $copied = 0
     $replaced = 0
+    $active = $null
     try {
+        $index = 0
         foreach ($entry in $Plan.Copies) {
+            $active = $recovery.files[$index++]
             Assert-CopyPath $entry.Destination
-            [void][IO.Directory]::CreateDirectory((Split-Path -Parent $entry.Destination))
+            $missing = New-Object 'System.Collections.Generic.List[string]'
+            $parent = Split-Path -Parent $entry.Destination
+            while (-not (Test-Path -LiteralPath $parent -PathType Container)) {
+                $missing.Add($parent)
+                $parent = Split-Path -Parent $parent
+            }
+            foreach ($directory in @($missing.ToArray()) | Sort-Object Length) {
+                Assert-CopyPath $directory
+                [void][IO.Directory]::CreateDirectory($directory)
+                $recovery.directories += $directory.Substring($Plan.Target.Length).TrimStart('\', '/').Replace('\', '/')
+                Write-CopyJson -Path $recoveryPath -Value $recovery
+            }
             $mode = if ($entry.Replace) { [IO.FileMode]::Open } else { [IO.FileMode]::CreateNew }
             $stream = [IO.File]::Open($entry.Destination, $mode, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
             try {
                 if ($entry.Replace) {
-                    $previous = New-Object byte[] $stream.Length
-                    $offset = 0
-                    while ($offset -lt $previous.Length) {
-                        $read = $stream.Read($previous, $offset, $previous.Length - $offset)
-                        if (-not $read) { throw "Unexpected end of destination: $($entry.Destination)" }
-                        $offset += $read
-                    }
+                    $previous = Read-CopyStream $stream
                     if ([Convert]::ToBase64String($previous) -cne [Convert]::ToBase64String($entry.Previous)) {
                         throw "Destination changed before replacement: $($entry.Destination)"
                     }
                     $stream.Position = 0
                 }
+                $active.state = 'writing'
+                Write-CopyJson -Path $recoveryPath -Value $recovery
                 $stream.Write($entry.Bytes, 0, $entry.Bytes.Length)
                 $stream.SetLength($entry.Bytes.Length)
                 $stream.Flush()
             }
             finally { $stream.Dispose() }
+            $active.state = 'applied'
             if ($entry.Replace) { $replaced++ } else { $copied++ }
+            Write-CopyJson -Path $recoveryPath -Value $recovery
+        }
+        if ($recovery) {
+            $recovery.status = 'ready'
+            Write-CopyJson -Path $recoveryPath -Value $recovery
         }
     }
     catch {
-        throw "Copy failed after $copied new and $replaced replaced files. Snapshot: $report. $($_.Exception.Message)"
+        $failure = $_.Exception
+        if ($recovery) {
+            $recovery.status = 'failed'
+            try {
+                if ($active -and $active.state -eq 'writing') {
+                    $active.afterHash = Get-CopyByteHash ([IO.File]::ReadAllBytes($entry.Destination))
+                    $active.state = 'applied'
+                }
+                Write-CopyJson -Path $recoveryPath -Value $recovery
+            }
+            catch { $failure = New-Object IO.IOException("$($failure.Message) Recovery update also failed: $($_.Exception.Message)", $failure) }
+        }
+        $copyError = New-Object IO.IOException("Copy failed after $copied new and $replaced replaced files. Snapshot: $report. Recovery: $recoveryPath. $($failure.Message)", $failure)
+        if ($recoveryPath) { $copyError.Data['RecoveryPath'] = $recoveryPath; $copyError.Data['TargetDirectory'] = $Plan.Target }
+        throw $copyError
     }
+    finally { if ($recoveryLock) { $recoveryLock.Dispose() } }
     [pscustomobject]@{
         Copied = $copied; Replaced = $replaced
         Preserved = $Plan.Conflicts.Count - $replaced; ReportPath = $report
+        RecoveryPath = $recoveryPath; TargetDirectory = $Plan.Target
     }
 }

@@ -22,6 +22,8 @@ pwsh -NoProfile -STA -File .\.template\soft-copy\CopyTemplate.ps1
 2. Tick files, or use **Select all** / **Select none**. Nothing is selected by default.
 3. Leave **Force copy** off to preserve existing files.
 4. Choose **Copy selected** and read the result/report path at the bottom.
+5. To undo that operation, choose **Revert last copy** and confirm. The button
+   becomes available after a copy changes files, including recoverable failures.
 
 **Force copy** replaces differing selected target files only after an additional
 confirmation, defaulting to **No**. Existing identical files are never rewritten.
@@ -46,6 +48,42 @@ or 7. Explicit file selection is required; paths are relative to the template ro
 reports or opening a GUI. `-DryRun` returns before reading files or opening a GUI.
 The source is always the repository containing this tool, not the current directory.
 The target need not contain Git metadata; an existing repository directory is enough.
+
+## Revert a copy
+
+Before destination writes, the tool saves a separate `recovery-*.json` snapshot
+beside the conflict report in ignored `.moorkyz/soft-copy/`. It contains original
+bytes, original modification times, expected copied-file hashes and ownership
+records for new files/directories. The existing conflict-report array stays unchanged.
+
+**Revert last copy** restores replaced files, removes files created by that
+operation and removes only empty directories created by it. Preserved conflicts,
+pre-existing directories and unrelated files are left alone. Revert checks every
+affected file before changing anything and refuses later edits or missing
+overwritten files. It remains available after refusal or cancellation.
+The button is bound to the original target, even if the target text field changes.
+After a successful revert it is disabled; unchanged copies do not enable it.
+
+You can also revert after closing the GUI. Supply the **same target directory**
+and the recovery path printed by the copy:
+
+```powershell
+.\.template\soft-copy\CopyTemplate.ps1 -TargetDirectory 'C:\repos\my app' -Revert 'C:\path\to\template\.moorkyz\soft-copy\recovery-<id>.json' -WhatIf
+.\.template\soft-copy\CopyTemplate.ps1 -TargetDirectory 'C:\repos\my app' -Revert 'C:\path\to\template\.moorkyz\soft-copy\recovery-<id>.json'
+```
+
+`-WhatIf` validates without reverting or updating snapshots. The GUI asks for
+confirmation (default **No**); the explicit CLI `-Revert` authorizes the action.
+Each changing copy has its own recovery path; the button tracks only the latest
+copy, while older snapshots remain available through the CLI. Undo overlapping
+operations newest-first. A per-snapshot exclusive lock prevents simultaneous
+reverts. Completed per-file restores are recorded so a later retry skips them.
+
+Snapshots and their small lock files remain local until you deliberately remove
+them; they are temporary recovery data, not tracked backups or an automatic
+retention service. Keep them until you are satisfied with the target. Do not edit
+snapshots or use ones from untrusted sources. Copies made before this recovery
+feature have no ownership journal and cannot be automatically reverted.
 
 ## Local JSON pairs
 
@@ -75,7 +113,8 @@ that the whole operation succeeded.
 These reports can contain **sensitive destination content**. Keep them local,
 review/redact them before deliberately giving them to an agent, and do not
 commit or automatically upload them. File content is untrusted data, not agent
-instructions. Reports are snapshots, not an automatic merge or rollback.
+instructions. Conflict reports are snapshots, not merge instructions; use the
+separate recovery snapshot for an explicit revert.
 
 ## Boundaries
 
@@ -88,10 +127,13 @@ instructions. Reports are snapshots, not an automatic merge or rollback.
 - All selected paths and bytes are checked before writing. Normal mode exclusively
   creates missing files; it cannot overwrite a file that appears during copying.
   Force mode checks the previous bytes again under an exclusive file handle.
-- A JSON snapshot is saved before destination writes. Files are copied one at a
-  time, not transactionally. A disk or permission error can leave partial progress;
-  the error includes completed counts and the snapshot location. Stop other
-  writers while copying; filesystem link/path replacement races cannot be fully
-  prevented by this script.
+- Conflict and recovery snapshots are saved before destination writes. Copies
+  and reverts run one file at a time, not transactionally. Controlled copy failures
+  retain recovery state for completed/observed writes. A disk/permission error
+  during recovery, or abrupt process/power loss during a copy, can still require
+  manual restoration from the saved bytes; incomplete `copying` journals are
+  deliberately refused. Stop other writers while copying/reverting; filesystem
+  link/path replacement races cannot be fully prevented by this script.
 - This tool does not claim the target project, rename placeholders, install
-  dependencies, delete files or choose which conflicting version is better.
+  dependencies or choose which conflicting version is better. Only an explicit
+  revert removes files owned by that copy; no recursive target cleanup is run.

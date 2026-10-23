@@ -11,10 +11,18 @@ function Confirm-TemplateOverwrite([string]$Target, [int]$Count) {
     $answer -eq [Windows.Forms.DialogResult]::Yes
 }
 
+function Confirm-TemplateRevert([string]$Target) {
+    [Windows.Forms.MessageBox]::Show(
+        "Revert the last copy into:`r`n$Target`r`n`r`nOverwritten files will be restored. Files created by that copy will be removed. Later edits are protected.",
+        'Confirm revert', [Windows.Forms.MessageBoxButtons]::YesNo,
+        [Windows.Forms.MessageBoxIcon]::Warning, [Windows.Forms.MessageBoxDefaultButton]::Button2) -eq [Windows.Forms.DialogResult]::Yes
+}
+
 function New-TemplateCopyForm {
     param([string]$Root, [string]$TargetDirectory, [string[]]$File, [switch]$ForceCopy)
     $corePath = Join-Path $PSScriptRoot 'CopyCore.ps1'
     $confirmOverwrite = ${function:Confirm-TemplateOverwrite}
+    $confirmRevert = ${function:Confirm-TemplateRevert}
     $form = New-Object Windows.Forms.Form
     $form.Text = 'Template soft copy'
     $form.ClientSize = New-Object Drawing.Size(820, 650)
@@ -74,6 +82,12 @@ function New-TemplateCopyForm {
     $copy.Text = 'Copy selected'
     $copy.SetBounds(16, 514, 140, 32)
     $copy.Anchor = 'Bottom,Left'
+    $revert = New-Object Windows.Forms.Button
+    $revert.Name = 'RevertLastCopy'
+    $revert.Text = 'Revert last copy'
+    $revert.Enabled = $false
+    $revert.SetBounds(166, 514, 150, 32)
+    $revert.Anchor = 'Bottom,Left'
     $status = New-Object Windows.Forms.TextBox
     $status.Name = 'CopyStatus'
     $status.Multiline = $true
@@ -98,6 +112,7 @@ function New-TemplateCopyForm {
     }).GetNewClosure())
     $copy.Add_Click(({
         $copy.Enabled = $false
+        $revert.Enabled = $false
         try {
             # WinForms closures cannot resolve the launcher's script-local helpers.
             . $corePath
@@ -109,14 +124,39 @@ function New-TemplateCopyForm {
                 return
             }
             $result = Invoke-TemplateCopyPlan $plan
-            $status.Text = "DONE - Copied: $($result.Copied); replaced: $($result.Replaced); preserved: $($result.Preserved).`r`nLocal content pairs: $($result.ReportPath)"
+            $revert.Tag = if ($result.RecoveryPath) {
+                [pscustomobject]@{ Path = $result.RecoveryPath; Target = $result.TargetDirectory }
+            } else { $null }
+            $status.Text = "DONE - Copied: $($result.Copied); replaced: $($result.Replaced); preserved: $($result.Preserved).`r`nLocal content pairs: $($result.ReportPath)`r`nRevert snapshot: $($result.RecoveryPath)"
+        }
+        catch {
+            if ($_.Exception.Data.Contains('RecoveryPath')) {
+                $revert.Tag = [pscustomobject]@{ Path = $_.Exception.Data['RecoveryPath']; Target = $_.Exception.Data['TargetDirectory'] }
+            }
+            $status.Text = "FAILED - $($_.Exception.Message)"
+        }
+        finally { $copy.Enabled = $true; $revert.Enabled = $null -ne $revert.Tag }
+    }).GetNewClosure())
+    $revert.Add_Click(({
+        $copy.Enabled = $false
+        $revert.Enabled = $false
+        try {
+            . $corePath
+            $plan = New-TemplateRevertPlan -Root $Root -TargetDirectory $revert.Tag.Target -RecoveryPath $revert.Tag.Path
+            if (-not (& $confirmRevert $plan.Target)) {
+                $status.Text = 'Revert cancelled; no files changed.'
+                return
+            }
+            $result = Invoke-TemplateRevertPlan $plan
+            $revert.Tag = $null
+            $status.Text = "REVERTED - Restored: $($result.Restored); removed: $($result.Removed). Local snapshots retained: $($result.RecoveryPath)"
         }
         catch { $status.Text = "FAILED - $($_.Exception.Message)" }
-        finally { $copy.Enabled = $true }
+        finally { $copy.Enabled = $true; $revert.Enabled = $null -ne $revert.Tag }
     }).GetNewClosure())
-    $form.Controls.AddRange(@($targetLabel, $target, $browse, $instruction, $list, $all, $none, $force, $copy, $status))
+    $form.Controls.AddRange(@($targetLabel, $target, $browse, $instruction, $list, $all, $none, $force, $copy, $revert, $status))
     [pscustomobject]@{
         Form = $form; Target = $target; Files = $list; Force = $force
-        Copy = $copy; Status = $status; All = $all; None = $none
+        Copy = $copy; Revert = $revert; Status = $status; All = $all; None = $none
     }
 }

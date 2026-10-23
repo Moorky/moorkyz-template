@@ -5,18 +5,20 @@ Copies selected template files to another directory, preserving existing files.
 .DESCRIPTION
 Without -NoGui, opens a lightweight Windows folder/file picker. Force copy is
 opt-in and never deletes source files. Content pairs stay in a local JSON report.
+Recovery snapshots enable an explicit revert without discarding later edits.
 .EXAMPLE
 powershell -NoProfile -STA -File .\.template\soft-copy\CopyTemplate.ps1
 .EXAMPLE
 .\.template\soft-copy\CopyTemplate.ps1 -NoGui -TargetDirectory C:\repos\app -File AGENTS.md,moorkyz -WhatIf
 #>
-[CmdletBinding(SupportsShouldProcess)]
+[CmdletBinding(SupportsShouldProcess, DefaultParameterSetName = 'Copy')]
 param(
     [switch]$DryRun,
     [string]$TargetDirectory,
-    [string[]]$File,
-    [switch]$ForceCopy,
-    [switch]$NoGui
+    [Parameter(ParameterSetName = 'Copy')][string[]]$File,
+    [Parameter(ParameterSetName = 'Copy')][switch]$ForceCopy,
+    [switch]$NoGui,
+    [Parameter(ParameterSetName = 'Revert')][string]$Revert
 )
 
 if ($DryRun) {
@@ -29,12 +31,23 @@ Set-StrictMode -Version Latest
 $root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 . (Join-Path $PSScriptRoot 'helpers\CopyCore.ps1')
 
+if ($PSCmdlet.ParameterSetName -eq 'Revert') {
+    $plan = New-TemplateRevertPlan -Root $root -TargetDirectory $TargetDirectory -RecoveryPath $Revert
+    if ($PSCmdlet.ShouldProcess($plan.Target, "Revert copy using $($plan.Path)")) {
+        $result = Invoke-TemplateRevertPlan $plan
+        Write-Host "Reverted - restored: $($result.Restored); removed: $($result.Removed)."
+        $result
+    }
+    return
+}
+
 if ($NoGui -or $WhatIfPreference) {
     $plan = New-TemplateCopyPlan -Root $root -TargetDirectory $TargetDirectory -File $File -ForceCopy:$ForceCopy
     if ($PSCmdlet.ShouldProcess($plan.Target, "Copy $($plan.Copies.Count) files; record $($plan.Conflicts.Count) content pairs")) {
         $result = Invoke-TemplateCopyPlan $plan
         Write-Host "Copied: $($result.Copied); replaced: $($result.Replaced); preserved: $($result.Preserved)."
         Write-Host "Content pairs (local, potentially sensitive): $($result.ReportPath)"
+        if ($result.RecoveryPath) { Write-Host "Revert snapshot (keep local): $($result.RecoveryPath)" }
         $result
     }
     return

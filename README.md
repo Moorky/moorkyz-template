@@ -22,6 +22,12 @@ Run [CreateProject.ps1](.template/claim-template/CreateProject.ps1) (right-click
 
 Then document the stack and add its manifest, scripts and lockfile. A missing application fails explicitly instead of starting a fabricated server.
 
+## Design collection
+
+Explore [the foundation collection](designs/index.html): **20 complete README HTML editions, 20 landing pages and one final template showcase**. The twenty original directions range from quiet editorial layouts to orbital space and selective chromatic light. All pages open locally without a server, framework or third-party runtime dependencies.
+
+The [collection guide](designs/README.md) includes every design, reference-study notes and regeneration instructions. The canonical README stays here; the additional editions contain the same documentation. After changing this file, run `node moorkyz readme` and `node designs/build.mjs`. Maintenance checks generated freshness, complete content and links. When removing the optional collection from an adopted project, remove its design checkup and documentation links together.
+
 ## Layout
 
 Reusable template tooling lives in [.template/](.template/README.md), separate from application code and project-owned tooling. Each tool keeps its entrypoint(s) and README together, with supporting files under `helpers/`. The self-contained [moorkyz](moorkyz) CLI is the exception and must stay at the repository root. Check the catalog when a task may need an existing tool; read its README and use it when appropriate, rather than running every tool automatically.

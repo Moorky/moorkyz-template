@@ -66,6 +66,13 @@ Nothing is written to log files.
   explicit CLI warnings using disposable archives. It also checks the root
   `docs/AUDIT_TEMPLATE.md` template, report generation in `.audits/` and history
   preservation during project adoption. No cleanup targets existing data.
+- [06-design-collection.ps1](helpers/checkups/06-design-collection.ps1) verifies
+  exactly twenty complete README editions, twenty distinct landings and the
+  final showcase, including generated freshness, unchanged README text, local
+  links/anchors, semantic landmarks, local-only assets and palette contrast.
+  It never regenerates pages. Browser/keyboard review remains separate; see
+  the [collection guide](../../designs/README.md). Remove this checkup with the
+  optional collection if an adopted project does not retain it.
 
 ## Safe modes
 

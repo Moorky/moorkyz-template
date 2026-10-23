@@ -3,7 +3,7 @@
 Historical report: commands and results describe this task's original state.
 See [current names and locations](README.md#current-names-and-locations) for later moves and removals.
 The bundled test files cited below were later removed; current checks use
-[maintenance](../.scripts/maintenance/RunCheckups.ps1).
+[maintenance](../.template-tools/maintenance/RunCheckups.ps1).
 
 | Field | Value |
 |---|---|
@@ -45,8 +45,8 @@ The bundled test files cited below were later removed; current checks use
 | Path | Change | Risk |
 |---|---|---|
 | [moorkyz](../moorkyz) | Hidden runtime paths, trash policy validation, recursive sizing and oldest-item overflow selection; legacy saved log paths stay readable | External writes are only checked during maintenance; classic ZIP limits still apply |
-| [config example](../.scripts/project-types/helpers/types/node/moorkyz.config.example.json) | Added `maxTrashBytes: 100000000000`; example later moved into the Node type | Existing configurations inherit the new default |
-| [.gitignore](../.gitignore), [Docker ignore starter](../.scripts/project-types/helpers/types/docker/.dockerignore) | Exclude dot-prefixed runtime folders; starter later moved into the Docker type | Existing recovery data stays local |
+| [config example](../.template-tools/project-types/helpers/types/node/moorkyz.config.example.json) | Added `maxTrashBytes: 100000000000`; example later moved into the Node type | Existing configurations inherit the new default |
+| [.gitignore](../.gitignore), [Docker ignore starter](../.template-tools/project-types/helpers/types/docker/.dockerignore) | Exclude dot-prefixed runtime folders; starter later moved into the Docker type | Existing recovery data stays local |
 | `tests/storage.test.cjs` (since removed) | Exact default/cap boundaries, nested sizing, overflow batches, hidden initialization, legacy preservation and failure safety | Large boundary simulated through metadata, not 100 GB disk allocation |
 | `tests/moorkyz.test.cjs`, `tests/documentation.test.cjs` (since removed) | Hidden paths, legacy log reading, Git/Docker exclusions, visible audits | Existing lifecycle tests retained at that time |
 | [README](../README.md), [README.html](../README.html), `READM.html` (since removed), [CLI guide](../docs/INFRASTRUCTURE.md) | Consistent names, exact cap, scheduling, no automatic migration and ZIP limits | HTML regenerated from Markdown |

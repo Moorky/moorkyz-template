@@ -1,7 +1,7 @@
 # Separate project-specific starter types
 
 Historical report: the move behavior and 63-test result below predate the menu/copy follow-up.
-Use the [current project types guide](../.scripts/project-types/README.md) for present behavior.
+Use the [current project types guide](../.template-tools/project-types/README.md) for present behavior.
 
 | Field | Value |
 |---|---|

@@ -34,9 +34,9 @@
 | Path | Change | Risk |
 |---|---|---|
 | [AGENTS.md](../AGENTS.md) | Explicit evidence honesty, secret/log protection, API preservation and blocker reporting; preserves the maintenance owner's verification command | Guidance only |
-| [AGENTS.template.md](../.scripts/copilot/helpers/AGENTS.template.md) | Move the former single-file setup template into the location already consumed by setup; preserve portable rules and add useful root-guide protections | New projects only; existing guides are not replaced |
-| [Setup-CopilotProject.ps1](../.scripts/copilot/Setup-CopilotProject.ps1) | Wrap MCP property enumeration in `@(...)` before counting, fixing the next default-setup failure exposed by action testing | Empty, single-server and multiple-server cases tested |
-| [.github/copilot/README.md](../.scripts/copilot/README.md) | Correct repository-root quick start; explain portable template, project context and existing-guide preservation | Documentation only |
+| [AGENTS.template.md](../.template-tools/copilot/helpers/AGENTS.template.md) | Move the former single-file setup template into the location already consumed by setup; preserve portable rules and add useful root-guide protections | New projects only; existing guides are not replaced |
+| [Setup-CopilotProject.ps1](../.template-tools/copilot/Setup-CopilotProject.ps1) | Wrap MCP property enumeration in `@(...)` before counting, fixing the next default-setup failure exposed by action testing | Empty, single-server and multiple-server cases tested |
+| [.github/copilot/README.md](../.template-tools/copilot/README.md) | Correct repository-root quick start; explain portable template, project context and existing-guide preservation | Documentation only |
 | [README.md](../README.md), [README.html](../README.html) | Add the setup/template links and regenerate the HTML edition without replacing other owners' content | Generated HTML follows current Markdown |
 | [AGENT_SCHEDULER.md](../AGENT_SCHEDULER.md) | Record owner scope, continuation, verification and commit blocker; release implementation claim | Coordination only |
 | `moorkyz-copilot-setup/` | Remove the obsolete directory only after moving its sole file and verifying that the resolved directory is regular and empty | No recursive deletion or unrelated data removal |

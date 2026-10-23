@@ -29,9 +29,9 @@ See [current names and locations](README.md#current-names-and-locations) for lat
   `--strictPort`. Other applications must honor `PORT` or configured `portArgs`.
 - A fresh run gets a new process, token, and log. Project data and local scripts
   are not deleted as a restart mechanism. Existing retention still applies to logs.
-- Added a dependency-free tooling [manifest](../.scripts/project-types/helpers/types/node/package.json) (now optional), npm
+- Added a dependency-free tooling [manifest](../.template-tools/project-types/helpers/types/node/package.json) (now optional), npm
   `package-lock.json` (since removed; see [layout history](2026-10-23T18-30-00Z-stack-neutral-baseline-and-readm-removal.md)), and disposable regression
-  `tests/` (since removed; current checks use [maintenance](../.scripts/maintenance/RunCheckups.ps1)).
+  `tests/` (since removed; current checks use [maintenance](../.template-tools/maintenance/RunCheckups.ps1)).
   There is no application runtime, development server,
   deployment destination, or additional npm dependency.
 - Audit discovery now uses the existing [template](../docs/audits/AUDIT-TEMPLATE.md),

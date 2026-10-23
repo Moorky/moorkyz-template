@@ -1992,7 +1992,7 @@ function help(command) {
       "\nRun from the target project root. With no config, a single root package.json is assumed.",
     );
     info(
-      "Add the node type with .\\.scripts\\project-types\\SetProjectType.cmd node (Windows) or .\\.scripts\\project-types\\SetProjectType.ps1 node (PowerShell).",
+      "Add the node type with .\\.template-tools\\project-types\\SetProjectType.cmd node (Windows) or .\\.template-tools\\project-types\\SetProjectType.ps1 node (PowerShell).",
       "For multiple Node projects, then copy moorkyz.config.example.json to moorkyz.config.json and edit.",
     );
     info(

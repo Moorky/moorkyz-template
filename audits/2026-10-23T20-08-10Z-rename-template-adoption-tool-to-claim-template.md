@@ -33,10 +33,10 @@
 
 | Path | Change | Risk |
 |---|---|---|
-| [Claim Template](../.scripts/claim-template/README.md), [CreateProject.ps1](../.scripts/claim-template/CreateProject.ps1), [configuration](../.scripts/claim-template/helpers/setup.config.json) | Folder rename, help path and one-time usage wording; script behavior/configuration preserved | Existing confirmation and optional permanent removal behavior unchanged |
-| [Script catalog](../.scripts/README.md), [agent guide](../AGENTS.md), [README Markdown](../README.md), [README HTML](../README.html) | Current name, examples and one-time adoption guidance; HTML regenerated | Integrated concurrent edits without reverting them |
-| [Project types](../.scripts/project-types/README.md), [maintenance guide](../.scripts/maintenance/README.md), [dependency maintenance](../docs/dependency-security.md) | Current adoption links and commands | Documentation only |
-| [Documentation checkup](../.scripts/maintenance/helpers/checkups/02-documentation.ps1) | Require renamed tool layout; reject retired adoption names and folder | Read-only checks; historical audits remain excluded from retired-name checks |
+| [Claim Template](../.template-tools/claim-template/README.md), [CreateProject.ps1](../.template-tools/claim-template/CreateProject.ps1), [configuration](../.template-tools/claim-template/helpers/setup.config.json) | Folder rename, help path and one-time usage wording; script behavior/configuration preserved | Existing confirmation and optional permanent removal behavior unchanged |
+| [Script catalog](../.template-tools/README.md), [agent guide](../AGENTS.md), [README Markdown](../README.md), [README HTML](../README.html) | Current name, examples and one-time adoption guidance; HTML regenerated | Integrated concurrent edits without reverting them |
+| [Project types](../.template-tools/project-types/README.md), [maintenance guide](../.template-tools/maintenance/README.md), [dependency maintenance](../docs/dependency-security.md) | Current adoption links and commands | Documentation only |
+| [Documentation checkup](../.template-tools/maintenance/helpers/checkups/02-documentation.ps1) | Require renamed tool layout; reject retired adoption names and folder | Read-only checks; historical audits remain excluded from retired-name checks |
 | [Root CLI](../moorkyz) | Correct one stale project-type selector path in general help; add a documentation-check assertion against the retired directory | Help text only; no lifecycle/storage behavior changed |
 | [Audit index](README.md) and six earlier reports | Repair live adoption links and current-reference display names; preserve historical evidence | No prior results rewritten |
 | [Scheduler](../AGENT_SCHEDULER.md), this report | Request, coordination, actual evidence and final blocker | No task-owned files staged with the unrelated baseline |

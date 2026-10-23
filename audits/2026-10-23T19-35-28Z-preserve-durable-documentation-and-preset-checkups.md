@@ -37,9 +37,9 @@
 
 | Path | Change | Risk |
 |---|---|---|
-| [02-documentation.ps1](../.scripts/maintenance/helpers/checkups/02-documentation.ps1) | Retain exact-case all-document links and README freshness; add current script names, icon/CI references, duplicate-edition rejection, portable CLI/ignore boundaries, private reporting and renderer escaping assertions | Read-only; no modules or actions executed beyond the existing pure README renderer |
-| [03-project-types.ps1](../.scripts/maintenance/helpers/checkups/03-project-types.ps1) | Durable JSON/ESM syntax and manifest checks; every preset individually and combined, preview/apply/rerun and failure cases on available PowerShell hosts and Windows CMD | Real selector actions restricted to owned disposable copies; rejects source links; cleans fixtures in `finally` |
-| [maintenance guide](../.scripts/maintenance/README.md), [README Markdown](../README.md), [README HTML](../README.html), [CLI guide](../docs/INFRASTRUCTURE.md), [audit index](README.md) | Explain expanded coverage and the disposable-fixture boundary without replacing unrelated guide content | Explicitly distinguish from retired lifecycle/storage coverage |
+| [02-documentation.ps1](../.template-tools/maintenance/helpers/checkups/02-documentation.ps1) | Retain exact-case all-document links and README freshness; add current script names, icon/CI references, duplicate-edition rejection, portable CLI/ignore boundaries, private reporting and renderer escaping assertions | Read-only; no modules or actions executed beyond the existing pure README renderer |
+| [03-project-types.ps1](../.template-tools/maintenance/helpers/checkups/03-project-types.ps1) | Durable JSON/ESM syntax and manifest checks; every preset individually and combined, preview/apply/rerun and failure cases on available PowerShell hosts and Windows CMD | Real selector actions restricted to owned disposable copies; rejects source links; cleans fixtures in `finally` |
+| [maintenance guide](../.template-tools/maintenance/README.md), [README Markdown](../README.md), [README HTML](../README.html), [CLI guide](../docs/INFRASTRUCTURE.md), [audit index](README.md) | Explain expanded coverage and the disposable-fixture boundary without replacing unrelated guide content | Explicitly distinguish from retired lifecycle/storage coverage |
 | [scheduler](../AGENT_SCHEDULER.md), this audit | Follow-up ownership, actual results, review status and baseline blocker | No unrelated queue claims changed |
 
 ## Verification

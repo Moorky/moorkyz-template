@@ -1,8 +1,8 @@
 # Setup automation
 
 Historical report: paths, commands and results below describe this task's original state.
-The current setup is [CreateProject.ps1](../.scripts/claim-template/CreateProject.ps1);
-type selection uses [SetProjectType.ps1](../.scripts/project-types/SetProjectType.ps1) and copies starters.
+The current setup is [CreateProject.ps1](../.template-tools/claim-template/CreateProject.ps1);
+type selection uses [SetProjectType.ps1](../.template-tools/project-types/SetProjectType.ps1) and copies starters.
 
 | Field | Value |
 |---|---|

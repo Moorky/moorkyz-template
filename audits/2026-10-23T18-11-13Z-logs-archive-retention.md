@@ -30,7 +30,7 @@ See [current names and locations](README.md#current-names-and-locations) for lat
     maintenance emit an explicit stderr warning when reclamation is insufficient.
   - Initialize the compressor before opening its source stream, preventing an
     unhandled asynchronous read error if compression initialization fails.
-- `tests/storage.test.cjs` (since removed; current checks use [maintenance](../.scripts/maintenance/RunCheckups.ps1)): added exact 50/lower-cap checks,
+- `tests/storage.test.cjs` (since removed; current checks use [maintenance](../.template-tools/maintenance/RunCheckups.ps1)): added exact 50/lower-cap checks,
   timestamp and calendar validation, oldest-first rotation independent of mtime,
   malformed files/directories plus trash in one ZIP, single-file DEFLATE,
   overlapping multi-file batches, protected archives/logs, byte and percentage

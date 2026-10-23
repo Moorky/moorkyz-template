@@ -19,9 +19,9 @@
 
 | Path | Change | Risk |
 |---|---|---|
-| [.projecttypes/SetProjectType.ps1](../.scripts/project-types/SetProjectType.ps1) | Resolve sources under `types/`; retain the repository root destination and protection of the entire `.projecttypes/` parent; reject junctions at both source levels | Low; action-level checks passed |
-| [CreateProject.ps1](../.scripts/claim-template/CreateProject.ps1) | Separate nested preset discovery from the unchanged selector entrypoint for validation, preview and apply | Low; preview, apply and rerun checked on both hosts |
-| [Project types guide](../.scripts/project-types/README.md), [setup guide](../.scripts/claim-template/README.md), [README.md](../README.md), [README.html](../README.html) | Update paths and preset links; regenerate HTML with the existing CLI | Low; all local links and generated HTML checked |
+| [.projecttypes/SetProjectType.ps1](../.template-tools/project-types/SetProjectType.ps1) | Resolve sources under `types/`; retain the repository root destination and protection of the entire `.projecttypes/` parent; reject junctions at both source levels | Low; action-level checks passed |
+| [CreateProject.ps1](../.template-tools/claim-template/CreateProject.ps1) | Separate nested preset discovery from the unchanged selector entrypoint for validation, preview and apply | Low; preview, apply and rerun checked on both hosts |
+| [Project types guide](../.template-tools/project-types/README.md), [setup guide](../.template-tools/claim-template/README.md), [README.md](../README.md), [README.html](../README.html) | Update paths and preset links; regenerate HTML with the existing CLI | Low; all local links and generated HTML checked |
 | [AGENTS.md](../AGENTS.md), [CONTRIBUTING.md](../CONTRIBUTING.md), [dependency maintenance](../docs/dependency-security.md) | Document `.projecttypes/types/<type>/` as the current source layout | Documentation only |
 | [Audit index](README.md), [launcher audit](2026-10-23-launcher-consolidation.md), [storage audit](2026-10-23T18-24-37Z-hidden-runtime-folders-and-100-gb-trash-cap.md) | Repair live starter links without changing recorded commands or results | Documentation only |
 | [Scheduler](../AGENT_SCHEDULER.md), this report | Record request, scope, actual results and commit blocker without replacing the active maintenance claim | Coordination only |

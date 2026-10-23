@@ -1,0 +1,30 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Dependencies, build and test output
+node_modules/
+coverage/
+dist/
+build/
+*.log
+
+# Scratch, editor and OS files
+tmp/
+.tmp/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Local runtime and recoverable data
+/.trash/
+/.logs/
+/.archive/
+/.moorkyz/

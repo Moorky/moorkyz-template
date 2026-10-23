@@ -1,0 +1,19 @@
+[
+  {
+    "name": "Anthropic BYOK example",
+    "vendor": "customendpoint",
+    "apiKey": "${input:anthropicApiKey}",
+    "apiType": "messages",
+    "models": [
+      {
+        "id": "claude-sonnet-4-6",
+        "name": "Claude Sonnet 4.6",
+        "url": "https://api.anthropic.com/v1/messages",
+        "toolCalling": true,
+        "vision": true,
+        "maxInputTokens": 136000,
+        "maxOutputTokens": 64000
+      }
+    ]
+  }
+]

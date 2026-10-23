@@ -1,0 +1,55 @@
+{
+  "globalSettings": {
+    "chat.agent.enabled": true,
+    "chat.agent.maxRequests": 100,
+    "chat.defaultModel": "opus",
+    "chat.planAgent.defaultModel": "Auto (Vendor Default)",
+    "chat.autopilot.advanced.enabled": true,
+    "chat.permissions.default": "default",
+    "chat.automations.enabled": true,
+    "chat.automations.cloud.enabled": false,
+    "chat.mcp.access": true,
+    "chat.mcp.discovery.enabled": false,
+    "chat.useAgentsMdFile": true,
+    "chat.useClaudeMdFile": true,
+    "chat.useAgentSkills": true,
+    "chat.tools.terminal.enableAutoApprove": true,
+    "chat.tools.terminal.ignoreDefaultAutoApproveRules": false,
+    "chat.tools.global.autoApprove": false,
+    "chat.tools.terminal.autoApprove": {
+      "rm": false,
+      "rmdir": false,
+      "del": false,
+      "kill": false,
+      "curl": false,
+      "wget": false,
+      "eval": false,
+      "chmod": false,
+      "chown": false,
+      "/^Remove-Item\\b/i": false
+    },
+    "chat.agent.sandbox.allowUnsandboxedCommands": false,
+    "chat.notifyWindowOnConfirmation": "always",
+    "chat.notifyWindowOnResponseReceived": "windowNotFocused",
+    "github.copilot.enable": {
+      "*": true
+    },
+    "github.copilot.nextEditSuggestions.enabled": true,
+    "editor.inlineSuggest.minShowDelay": 0
+  },
+  "projectSettings": {
+    "chat.agent.enabled": true,
+    "chat.agent.maxRequests": 100,
+    "github.copilot.chat.agent.autoFix": true,
+    "github.copilot.chat.summarizeAgentConversationHistory.enabled": true,
+    "chat.useAgentsMdFile": true,
+    "chat.useAgentSkills": true,
+    "chat.mcp.access": true,
+    "chat.tools.global.autoApprove": false,
+    "chat.permissions.default": "default",
+    "chat.tools.compressOutput.enabled": true
+  },
+  "sandbox": "auto",
+  "createAgentsMd": true,
+  "mcpServers": {}
+}

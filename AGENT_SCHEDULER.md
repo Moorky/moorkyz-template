@@ -1,0 +1,95 @@
+# Agent Scheduler
+
+Shared request ledger and serial work queue for Moorkyz projects. Read
+[AGENTS.md](AGENTS.md) first.
+
+This is a coordination document, not an automatic launcher or atomic lock. A
+claim never authorizes uploads, spending, deletion, credentials, deployment,
+publishing or pushing.
+
+## Picking work
+
+1. Record every new owner request or clarification in the ledger before
+   implementing it.
+2. Only one queue item may be `IN_PROGRESS` across all agents. Take the first
+   `READY` item whose dependencies are `DONE`; never take another agent's
+   `CLAIMED`, `IN_PROGRESS` or `PAUSED` item without a recorded handoff.
+3. Claim it with your agent/session ID, UTC time and intended file scope. Re-read
+   the row before editing. On a conflicting claim, stop and coordinate.
+4. Work only on that item. Do not work ahead or start other items in parallel
+   without explicit owner approval. Preserve other agents' edits.
+5. Finish acceptance checks, docs, the scoped audit and a focused local commit
+   (see [AGENTS.md](AGENTS.md)). Record the commit and actual results; never mark
+   unverified work `DONE`.
+6. Release the claim, reconcile dependents and claim the next eligible item.
+   Stop only when the approved scope is `DONE`, the owner pauses it, or a
+   concrete blocker remains. Record blockers and handoff details; a blocked
+   remainder is incomplete.
+
+| State | Meaning |
+|---|---|
+| READY | Unclaimed; prerequisites complete. |
+| CLAIMED | Reserved by the named owner, not yet active. |
+| IN_PROGRESS | The single active item across agents. |
+| PAUSED | Explicitly paused; owner and restart notes retained. |
+| BLOCKED | Missing prerequisite, input or approval is recorded. |
+| DONE | Acceptance, audit and local commit complete. |
+
+## Request ledger
+
+| Request | Requested outcome and confirmed decisions | State / evidence |
+|---|---|---|
+| REQ-001 | _Example: describe the owner request and any confirmed decisions._ | READY |
+| REQ-TEMPLATE-TOOLS-014 | Owner (2026-10-23): never name the reusable template tooling as project scripts; distinguish it from product-owned code. Use `.template-tools/` for the shared template tools, preserving `claim-template`, root `moorkyz`, helper layout and completed Copilot behavior. | IN_PROGRESS by Copilot SDK session e8efba40-e5dd-47c9-8b13-4bb454921d80, 2026-10-23T20:17Z. Scope: parent-folder rename, active references, current doc/audit links and template-tool terminology; preserve historical commands and unrelated data. |
+| REQ-COPILOT-STATUS-013 | Owner (2026-10-23T19:54Z): Copilot setup must clearly report success or list failures; `moorkyz` must remain at the repository root, superseding that part of the earlier all-tooling move. Coordinated the root exception with SCRIPTS-LAYOUT-012; preserve the other four tool folders and all local runtime data. | PASS: Copilot reports ALL SET / FAILED with per-step errors / PREVIEW ONLY / INCOMPLETE and explicit exit codes, with a visible pause and -NoPause. Root CLI and consumers restored; location regression guard added. Full maintenance PASS 4/4 on PowerShell 7 and Windows PowerShell 5.1 with Node 24.22.0; disposable setup checks cover both hosts. [Audit](audits/2026-10-23T20-02-22Z-copilot-setup-results-and-root-launcher.md). Implementation scope released by session a8a12d5f-6531-4d46-9aa1-825e25a46bc4; focused commit alone blocked by unborn/untracked baseline. |
+| REQ-CLAIM-TEMPLATE-013 | Owner (2026-10-23): rename the adoption folder to `.scripts/claim-template`, identify it as a one-time tool, then find and fix mismatched names/references. Preserve the existing script name, configuration, root CLI exception and historical audit evidence. | Implementation PASS: renamed folder, one-time guidance, live refs/audit links and stale CLI-help path corrected; configuration byte-identical. Final maintenance PASS 4/4 with Node 24.21.0; 10 disposable adoption checks PASS on PowerShell 7 and 5.1; final live-name search clean. Transient external CLI move resolved externally before final checks. Claim released by session 8348d860-25be-4c44-a05a-ecacba04e5b9. [Audit](audits/2026-10-23T20-08-10Z-rename-template-adoption-tool-to-claim-template.md). Focused commit alone blocked by unborn/untracked baseline; no files staged. |
+| REQ-SCRIPTS-LAYOUT-012 | Owner (2026-10-23): group script folders with entry script(s)/README and nested helpers; explicitly chose `.scripts/` and requested agent/doc guidance to use fitting existing tools when needed. A newer owner instruction in the Copilot-status session requires `moorkyz` to stay at root: preserve that exception, and keep platform-required workflow/agent discovery locations. | Implementation PASS: four consolidated tool folders and catalog, nested helpers, root CLI retained, current consumers/docs/agent guidance updated. Full maintenance PASS 4/4 on PS7 and PS5.1; 14 disposable regression groups and 17 immutable assets PASS. [Audit](audits/2026-10-23T20-01-52Z-consolidate-scripts-under-scripts.md). Claim released; only OS-locked empty legacy directory and unborn-baseline commit remain blocked. |
+| REQ-CHECKUP-COVERAGE-011 | Coordination follow-up (2026-10-23): preserve durable documentation and preset checks after example-test removal: exact-case links across all docs/audits, current names, icons/CI, config syntax, all nine opt-in presets and CMD preview/apply/rerun/failures with source bytes preserved. | PASS: full runner 3/3 on both PowerShell hosts, 11 runnable sources/20 CLI safe modes; all nine presets on pwsh/powershell.exe/CMD in disposable copies; 18-case fault/safety suite plus exact-output-shape probe PASS. [Audit](audits/2026-10-23T19-35-28Z-preserve-durable-documentation-and-preset-checkups.md). Implementation claim released; focused commit alone blocked by unborn baseline. |
+| REQ-MENU-LAYOUT-010 | Owner (2026-10-23T19:18Z): keep selector controls simple in one row below the list; split the list into two columns. Preserve multi-select, numbering, confirmation, source copies and DryRun. | PASS: layout/key assertions for 1/2/9/12 types on PowerShell 7 and Windows PowerShell 5.1; current maintenance 2/2 on Node 24.21.0. [Audit](audits/2026-10-23T19-19-54Z-two-column-selector-with-compact-controls.md). Session 9c442293 releases bounded render/docs edits; focused commit blocked by unborn/untracked baseline. |
+| REQ-TYPE-PATHS-009 | Owner (2026-10-23): all project type folders moved into `.scripts/project-types/helpers/types/`; update references. Keep selector entrypoints in `.scripts/project-types/`, preserve source folders and unrelated maintenance work. | Implementation verified by Copilot SDK session 9b9fd353-7950-4653-9113-e2dfdeaf52e6: PASS 26 disposable regressions on both PowerShell hosts/CMD; PASS 2 maintenance checkups on Node 24.21.0; HTML regenerated and all live links valid. [Audit](audits/2026-10-23T19-16-43Z-update-references-for-nested-project-types.md). Focused commit blocked by unborn baseline. |
+| REQ-AGENT-TEMPLATE-009 | Owner (2026-10-23): compare the supplied agent template with the current agent guide, retain useful improvements in a reusable template, adjust the guide and delete the obsolete parent folder. Owner then explicitly directed continuing autonomously rather than waiting for the maintenance handoff. | Implementation PASS: portable template beside its setup consumer; root guide improved; obsolete empty folder removed. Default setup's empty-MCP count fixed. Focused action checks PASS 7/7 on each PowerShell host; maintenance PASS 2/2 (Node 24.21.0). [Audit](audits/2026-10-23T19-16-05Z-consolidate-portable-agent-template.md). Implementation claim released; focused commit blocked by unborn baseline. |
+| REQ-MAINTENANCE-008 | Owner (2026-10-23): remove the bundled example tests; add a `maintenance` directory with one runner and a `checkups` folder; run every checkup with terminal logging and "Press any key to exit". Clarification: check all scripts/runnables without performing their actions; add a safe parameter where missing. | Implementation verified: full runner 2/2 on both PowerShell hosts; all 10 runnable sources and 20 CLI commands; disposable regressions 19/19, compatibility cases 4/4 and real-console key checks 4/4. [Audit](audits/2026-10-23T19-19-45Z-replace-example-tests-with-safe-maintenance-checkups.md). Commit alone blocked by unborn baseline. |
+| REQ-CLEANUP-006 | Owner (2026-10-23T18:58Z): clean up scheduler tasks; remove all logs; explain `.agents`; stop renaming folders; add a README to the adoption tool (now `.scripts/claim-template`); remove non-dot folders that duplicate dot folders (`logs`, `archive`, `trash`) and their references so only dot folders are used. Owner-directed parallel to TYPES-005; no folder renames in that historical task. | PASS 100/100 (Node 24.22.0); [audit](audits/2026-10-23T19-02-00Z-scheduler-cleanup-dot-only-runtime.md). Commit blocked by unborn baseline. |
+| REQ-REFERENCES-007 | Owner (2026-10-23T18:58Z): go through each file and update incorrect references and names. Use actual current filenames/casing, current repository links and type paths; repair historical audit links without rewriting recorded test history. No folder renames or local-data cleanup. | PASS: exact-case Markdown/HTML links and README freshness in current maintenance, 2/2 checkups on Node 24.21.0; actual repo URL and setup replacement verified. [Audit](audits/2026-10-23T19-11-19Z-correct-references-and-add-popular-selector-presets.md). All edits released; focused commit blocked by unborn/untracked baseline. |
+| REQ-PRESETS-008 | Owner requested a CMD entry point, multi-selection and more popular simple packages. Clarification unavailable: add a Windows CMD companion plus TypeScript, ESLint, Prettier, Stylelint, Markdownlint and VS Code config presets. No installs, application runtime, manifest merging, folder renames or source deletion; tools require separate reviewed installation. | PASS: all nine relocated types under `.scripts/project-types/helpers/types/` combine on pwsh, powershell.exe and CMD; preview/apply/rerun, conflict refusal, source-byte preservation and spaced paths verified in disposable directories. Current maintenance 2/2. [Audit](audits/2026-10-23T19-11-19Z-correct-references-and-add-popular-selector-presets.md). Session 9c442293 releases all edits; focused commit blocked by unborn baseline. |
+| REQ-TYPES-005-MENU | Owner resumed menu work: arrows and numbers, Space toggles, Enter reviews for explicit Y confirmation, Esc/Q cancels. Owner then explicitly superseded the archive/removal request: "you can add as many as you want, no deletion". Keep all project types; interactive and explicit selections copy starters, treat identical root files as no-ops, refuse differing files, allow later additions, and never delete or archive from the selector. | Implementation PASS 103/103 on Node 24.21.0; menu/copy behavior exercised on both PowerShell hosts. [Audit](audits/2026-10-23T18-59-05Z-additive-project-type-selection-menu.md). Session d753305c-08ac-4194-844d-336a2e32231a releases its implementation claim; focused commit blocked by unborn baseline. |
+
+## Work queue
+
+Completed items are removed; their evidence lives in [audits](audits/README.md). All completed work awaits the owner-approved initial commit.
+
+| Item | Priority | State | Owner | Dependencies | Scope and next action | Agent Review |
+|---|---|---|---|---|---|---|
+| EXAMPLE-01 | P1 | READY | | None | _Example: bounded scope, acceptance criteria and next action (REQ-001)._ | Not requested |
+| TEMPLATE-TOOLS-014 | P1 | IN_PROGRESS | Copilot SDK session e8efba40-e5dd-47c9-8b13-4bb454921d80, 2026-10-23T20:17Z | None | Rename the common tooling parent to `.template-tools`, update all current consumers/guidance/links, retain root CLI and one-time claim name, verify both hosts and disposable action behavior, then audit without staging unrelated baseline files. | Not requested |
+| SCRIPTS-LAYOUT-012 | P1 | BLOCKED | Implementation claim released by Copilot SDK session e8efba40-e5dd-47c9-8b13-4bb454921d80 | None | Requested tooling layout verified: four `.scripts` folders, entrypoints/README and nested helpers; root CLI exception preserved. PASS 4/4 maintenance on both hosts, 14 disposable groups, 17 unchanged assets and exact-case links/HTML. [Audit](audits/2026-10-23T20-01-52Z-consolidate-scripts-under-scripts.md). Remaining: old `.github/copilot` directory is empty but OS-locked; focused commit requires owner-approved initial baseline. | Not requested |
+| CHECKUP-COVERAGE-011 | P1 | BLOCKED | Implementation claim released by Copilot SDK session 561d69bd-345e-4a6a-9a08-a0bb20708164 | None | Expanded durable checkups and audit complete; full runner 3/3 on both hosts, 18/18 fault/safety suite and 1/1 exact-output-shape probe. No shared-file ownership retained. Only focused commit is blocked by unrelated unborn/untracked baseline; owner-approved initialization required. | Not requested |
+| TYPE-PATHS-009 | P1 | BLOCKED | Implementation claim released by Copilot SDK session 9b9fd353-7950-4653-9113-e2dfdeaf52e6 | None | References updated and verified: selector/setup use nested presets, 26 action regressions and 2 maintenance checkups PASS; [audit](audits/2026-10-23T19-16-43Z-update-references-for-nested-project-types.md). Only focused commit is blocked by the unborn/untracked baseline; owner-approved initialization required. Maintenance work preserved. | Not requested |
+| AGENT-TEMPLATE-009 | P1 | BLOCKED | Implementation claim released by Copilot SDK session e8efba40-e5dd-47c9-8b13-4bb454921d80 | None | Requested implementation verified: focused action checks PASS 14/14 across PS7/PS5.1; maintenance PASS 2/2, exact-case links and HTML current. [Audit](audits/2026-10-23T19-16-05Z-consolidate-portable-agent-template.md). Only the focused commit is blocked: owner-approved initial baseline required to avoid committing unrelated untracked shared files. | Not requested |
+| MAINTENANCE-008 | P1 | BLOCKED | Implementation claim released by Copilot SDK session 561d69bd-345e-4a6a-9a08-a0bb20708164 | None | Implementation and audit complete; checks PASS on Node 24.21.0 with both PowerShell hosts. Only a focused local commit is blocked by the unrelated unborn/untracked baseline; owner-approved initial baseline required. Existing runtime data and unrelated work preserved. | Not requested |
+| TYPES-005 | P1 | BLOCKED | Implementation claim released by Copilot SDK session d753305c-08ac-4194-844d-336a2e32231a | None | Implementation complete and verified: multi-select menu, explicit Y confirmation, copy-only behavior, later additions and source preservation. Final Node 24.21.0 suite PASS 103/103; [menu audit](audits/2026-10-23T18-59-05Z-additive-project-type-selection-menu.md). Only the focused local commit is blocked by the unrelated unborn/untracked baseline; owner-approved initial baseline required. | Not requested |
+
+Keep each table contiguous and each cell on one line (use `<br>` for breaks and
+`&#124;` for a literal pipe). Put longer acceptance criteria under a
+`### ITEM-ID` heading below.
+
+## Agent Review and follow-ups
+
+Agent Review is optional and runs only on an explicit owner instruction. A blank
+or `Not requested` cell never starts one; mandatory tests and audits still apply.
+
+1. Record the instruction, reviewed item IDs and UTC time. Follow the same
+   single-claim rules. For a `DONE` item, add a linked review item instead of
+   reopening it.
+2. Fix authorized, actionable findings and verify them.
+3. Write a concise result in the original item's `Agent Review` cell: reviewer,
+   UTC date, scope, fixes, verification and limits. Use `Requested`,
+   `In progress` or `Completed` with comments, never a bare PASS.
+4. For each unresolved finding, create or update one deduplicated follow-up with
+   a backlink, evidence, required fix, acceptance criteria and dependencies. Set
+   it `BLOCKED` with the exact reason when it cannot proceed. Do not implement
+   follow-ups the owner did not approve.
+
+## Item details
+
+<!-- Add `### ITEM-ID` sections with acceptance criteria and evidence here. -->

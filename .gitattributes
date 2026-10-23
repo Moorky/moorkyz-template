@@ -1,0 +1,15 @@
+# Store text as LF regardless of core.autocrlf; Windows batch files need CRLF.
+* text=auto eol=lf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Never convert or diff these as text.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff2 binary
+*.pdf binary
+*.zip binary

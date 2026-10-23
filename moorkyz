@@ -1,0 +1,2215 @@
+#!/usr/bin/env node
+"use strict";
+
+// Moorkyz project development CLI. Built from Node.js core modules only.
+// Run from the intended project root; never manipulates other projects' processes.
+const fs = process.getBuiltinModule("fs");
+const path = process.getBuiltinModule("path");
+const crypto = process.getBuiltinModule("crypto");
+const net = process.getBuiltinModule("net");
+const { spawn, spawnSync } = process.getBuiltinModule("child_process");
+const CLI_FILE = typeof __filename === "string"
+  ? __filename
+  : fs.realpathSync(path.resolve(process.argv[1]));
+const storage = (() => {
+// Shared local storage policy. Node core only; safe to require from project code.
+const fs = process.getBuiltinModule("fs");
+const path = process.getBuiltinModule("path");
+const crypto = process.getBuiltinModule("crypto");
+const zlib = process.getBuiltinModule("zlib");
+const { Transform } = process.getBuiltinModule("stream");
+const { pipeline } = process.getBuiltinModule("stream/promises");
+
+const LOG_RE = /^log_\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-\d{3}\.log$/;
+const ARCHIVE_RE = /^log_\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-\d{3}\.zip$/;
+const DEFAULTS = Object.freeze({
+  maxLogs: 50,
+  maxTrashBytes: 100_000_000_000,
+  minFreeBytes: 1024 ** 3,
+  targetFreeBytes: 2 * 1024 ** 3,
+  minFreePercent: 5,
+  targetFreePercent: 10,
+});
+const ZIP_LIMIT = 0xffffffff;
+
+function storagePolicy(value = {}) {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error("storage must be a JSON object.");
+  for (const key of Object.keys(value)) {
+    if (!Object.hasOwn(DEFAULTS, key))
+      throw new Error(`Unknown storage setting '${key}'.`);
+  }
+  const settings = { ...DEFAULTS, ...value };
+  for (const [key, number] of Object.entries(settings)) {
+    if (!Number.isFinite(number) || number < 0)
+      throw new Error(`storage.${key} must be a non-negative number.`);
+  }
+  if (
+    !Number.isInteger(settings.maxLogs) ||
+    settings.maxLogs < 1 ||
+    settings.maxLogs > 50
+  )
+    throw new Error("storage.maxLogs must be an integer from 1 to 50.");
+  if (
+    !Number.isSafeInteger(settings.maxTrashBytes) ||
+    settings.maxTrashBytes > DEFAULTS.maxTrashBytes
+  )
+    throw new Error(
+      `storage.maxTrashBytes must be an integer from 0 to ${DEFAULTS.maxTrashBytes}.`,
+    );
+  if (
+    settings.minFreePercent > 100 ||
+    settings.targetFreePercent > 100 ||
+    settings.targetFreePercent < settings.minFreePercent ||
+    settings.targetFreeBytes < settings.minFreeBytes
+  )
+    throw new Error(
+      "Storage target thresholds must be at least the minimum thresholds; percentages cannot exceed 100.",
+    );
+  return settings;
+}
+
+function inside(root, target) {
+  const relative = path.relative(root, target);
+  return (
+    relative !== ".." &&
+    !relative.startsWith(`..${path.sep}`) &&
+    !path.isAbsolute(relative)
+  );
+}
+
+/** Reject symlinks/junctions at every path component, including internal links. */
+function scopedPath(root, input, allowMissing = false) {
+  const base = fs.realpathSync(root);
+  const target = path.resolve(base, input);
+  if (!inside(base, target))
+    throw new Error(`Path escapes project scope: ${input}`);
+  let current = base;
+  for (const part of path
+    .relative(base, target)
+    .split(path.sep)
+    .filter(Boolean)) {
+    current = path.join(current, part);
+    let stat;
+    try {
+      stat = fs.lstatSync(current);
+    } catch (error) {
+      if (allowMissing && error.code === "ENOENT") continue;
+      throw error;
+    }
+    if (stat.isSymbolicLink())
+      throw new Error(
+        `Refusing symlink or junction: ${path.relative(base, current)}`,
+      );
+  }
+  return target;
+}
+
+function ensureDirectories(root) {
+  for (const name of [".moorkyz", ".logs", ".archive", ".trash"]) {
+    const folder = scopedPath(root, name, true);
+    fs.mkdirSync(folder, { recursive: true });
+    if (!fs.lstatSync(folder).isDirectory())
+      throw new Error(`${name} must be a directory.`);
+  }
+}
+
+function processAlive(pid) {
+  if (!Number.isSafeInteger(pid) || pid < 1) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error.code === "EPERM";
+  }
+}
+
+/** All CLI/library writers cooperate through atomic PID leases for their open logs. */
+function registerLog(root, filename, pid = process.pid) {
+  ensureDirectories(root);
+  const file = scopedPath(root, filename);
+  const logFolder = scopedPath(root, ".logs");
+  if (
+    path.dirname(file) !== logFolder ||
+    !validName(path.basename(file), ".log") ||
+    !fs.lstatSync(file).isFile()
+  )
+    throw new Error(
+      "Only canonical regular files in the project's .logs/ directory can be registered.",
+    );
+  if (!Number.isSafeInteger(pid) || pid < 1)
+    throw new Error("A log lease requires a valid process PID.");
+  const directory = scopedPath(root, path.join(".moorkyz", "log-leases"), true);
+  fs.mkdirSync(directory, { recursive: true });
+  const lease = scopedPath(
+    root,
+    path.join(directory, `${path.basename(file)}.json`),
+    true,
+  );
+  const token = crypto.randomBytes(16).toString("hex");
+  const temporary = scopedPath(root, `${lease}.${token}.tmp`, true);
+  try {
+    fs.writeFileSync(
+      temporary,
+      JSON.stringify({ pid, token, log: path.basename(file) }),
+      { flag: "wx", mode: 0o600 },
+    );
+    // Publish without replacing an existing writer's protection. A second
+    // registrant must not release the first writer's lease when it closes.
+    try {
+      fs.linkSync(temporary, lease);
+    } catch (error) {
+      if (error.code === "EEXIST")
+        throw new Error(
+          `Log already registered: ${path.relative(root, file)}. Close its writer or run maintenance to clear a dead lease.`,
+        );
+      throw error;
+    }
+  } finally {
+    if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
+  }
+  return () => {
+    if (!fs.existsSync(lease)) return;
+    const current = JSON.parse(
+      fs.readFileSync(scopedPath(root, lease), "utf8"),
+    );
+    if (current.token === token) fs.unlinkSync(lease);
+  };
+}
+
+function registeredLogPaths(root) {
+  const folder = scopedPath(root, path.join(".moorkyz", "log-leases"), true);
+  if (!fs.existsSync(folder)) return [];
+  const live = [];
+  for (const name of fs
+    .readdirSync(folder)
+    .filter((value) => value.endsWith(".json"))) {
+    const file = scopedPath(root, path.join(folder, name));
+    const entry = JSON.parse(fs.readFileSync(file, "utf8"));
+    if (
+      !entry ||
+      !validName(entry.log || "", ".log") ||
+      name !== `${entry.log}.json` ||
+      !Number.isSafeInteger(entry.pid) ||
+      entry.pid < 1 ||
+      !/^[a-f0-9]{32}$/.test(entry.token || "")
+    )
+      throw new Error(
+        `Invalid active log lease: ${path.relative(root, file)}. Inspect it before running maintenance.`,
+      );
+    if (processAlive(entry.pid))
+      live.push(scopedPath(root, path.join(".logs", entry.log), true));
+    else fs.unlinkSync(file);
+  }
+  return live;
+}
+
+function archiveLease(root, filename) {
+  const directory = scopedPath(
+    root,
+    path.join(".moorkyz", "archive-leases"),
+    true,
+  );
+  fs.mkdirSync(directory, { recursive: true });
+  const file = scopedPath(
+    root,
+    path.join(directory, `${path.basename(filename)}.json`),
+    true,
+  );
+  const token = crypto.randomBytes(16).toString("hex");
+  const temporary = scopedPath(root, `${file}.${token}.tmp`, true);
+  try {
+    fs.writeFileSync(
+      temporary,
+      JSON.stringify({
+        pid: process.pid,
+        token,
+        archive: path.basename(filename),
+      }),
+      { flag: "wx", mode: 0o600 },
+    );
+    fs.renameSync(temporary, file);
+  } finally {
+    if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
+  }
+  return () => {
+    if (fs.existsSync(file)) fs.unlinkSync(scopedPath(root, file));
+  };
+}
+
+function protectedArchives(root) {
+  const folder = scopedPath(
+    root,
+    path.join(".moorkyz", "archive-leases"),
+    true,
+  );
+  if (!fs.existsSync(folder)) return [];
+  const live = [];
+  for (const name of fs
+    .readdirSync(folder)
+    .filter((value) => value.endsWith(".json"))) {
+    const file = scopedPath(root, path.join(folder, name));
+    const entry = JSON.parse(fs.readFileSync(file, "utf8"));
+    if (
+      !entry ||
+      !validName(entry.archive || "", ".zip") ||
+      name !== `${entry.archive}.json` ||
+      !Number.isSafeInteger(entry.pid) ||
+      entry.pid < 1
+    )
+      throw new Error(
+        `Invalid in-progress archive lease: ${path.relative(root, file)}. Inspect it before maintenance.`,
+      );
+    if (processAlive(entry.pid))
+      live.push(path.join(root, ".archive", entry.archive));
+    else fs.unlinkSync(file);
+  }
+  return live;
+}
+
+function timestamp(date = new Date()) {
+  return `log_${date.toISOString().replace("T", "-").replace(/[:.]/g, "-").replace(/Z$/, "")}`;
+}
+
+function validName(name, extension) {
+  const expression = extension === ".log" ? LOG_RE : ARCHIVE_RE;
+  if (!expression.test(name)) return false;
+  const pieces = name.slice(4, -extension.length).split("-").map(Number);
+  const [year, month, day, hour, minute, second, millisecond] = pieces;
+  const date = new Date(
+    Date.UTC(year, month - 1, day, hour, minute, second, millisecond),
+  );
+  return timestamp(date) + extension === name;
+}
+
+function reserveName(root, folder, extension) {
+  for (let increment = 0; increment < 10000; increment++) {
+    const filename = scopedPath(
+      root,
+      path.join(
+        folder,
+        timestamp(new Date(Date.now() + increment)) + extension,
+      ),
+      true,
+    );
+    try {
+      return { filename, fd: fs.openSync(filename, "wx", 0o600) };
+    } catch (error) {
+      if (error.code !== "EEXIST") throw error;
+    }
+  }
+  throw new Error(
+    `Cannot allocate a unique filename in ${folder}. Retry after other writers finish.`,
+  );
+}
+
+function snapshot(file) {
+  const stat = fs.lstatSync(file);
+  if (stat.isSymbolicLink() || (!stat.isFile() && !stat.isDirectory()))
+    throw new Error(`Only regular files/directories can be archived: ${file}`);
+  return stat;
+}
+
+function unchanged(before, after) {
+  return (
+    before.dev === after.dev &&
+    before.ino === after.ino &&
+    before.size === after.size &&
+    before.mtimeMs === after.mtimeMs &&
+    before.ctimeMs === after.ctimeMs
+  );
+}
+
+async function hashFile(file) {
+  const hash = crypto.createHash("sha256");
+  for await (const chunk of fs.createReadStream(file)) hash.update(chunk);
+  return hash.digest("hex");
+}
+
+function gather(root, inputs) {
+  if (!Array.isArray(inputs) || !inputs.length)
+    throw new Error("Choose at least one project-relative path to archive.");
+  const base = fs.realpathSync(root);
+  const selections = [
+    ...new Set(
+      inputs.map((input) => {
+        if (typeof input !== "string" || !input)
+          throw new Error("Archive paths must be non-empty strings.");
+        const file = scopedPath(base, input);
+        const relative = path.relative(base, file);
+        const first = relative.split(path.sep)[0].toLowerCase();
+        if (!relative || [".git", ".moorkyz", ".archive"].includes(first))
+          throw new Error(
+            `Cannot archive the project root, Git metadata, runtime state or archives: ${input}`,
+          );
+        return file;
+      }),
+    ),
+  ].sort((a, b) => a.length - b.length);
+  const roots = selections.filter(
+    (file, index) =>
+      !selections.slice(0, index).some((parent) => inside(parent, file)),
+  );
+  const entries = [];
+  function visit(file) {
+    scopedPath(base, file);
+    if (
+      path
+        .relative(base, file)
+        .split(path.sep)
+        .some((part) => part.toLowerCase() === ".git")
+    )
+      throw new Error(
+        `Cannot archive Git metadata: ${path.relative(base, file)}`,
+      );
+    const stat = snapshot(file);
+    if (stat.isFile() && stat.size >= ZIP_LIMIT)
+      throw new Error(
+        `File exceeds the 4 GiB classic ZIP limit: ${path.relative(base, file)}. Split this file before archiving.`,
+      );
+    const directory = stat.isDirectory();
+    entries.push({
+      file,
+      stat,
+      directory,
+      name:
+        path.relative(base, file).split(path.sep).join("/") +
+        (directory ? "/" : ""),
+    });
+    if (entries.length > 65534)
+      throw new Error(
+        "Archive exceeds 65534 entries; split the operation into smaller batches.",
+      );
+    if (directory)
+      for (const name of fs.readdirSync(file).sort())
+        visit(path.join(file, name));
+  }
+  roots.forEach(visit);
+  return entries;
+}
+
+function writeAll(fd, bytes) {
+  let written = 0;
+  while (written < bytes.length)
+    written += fs.writeSync(fd, bytes, written, bytes.length - written);
+}
+
+function dosTime(date) {
+  const year = Math.min(2107, Math.max(1980, date.getUTCFullYear()));
+  return {
+    time:
+      (date.getUTCHours() << 11) |
+      (date.getUTCMinutes() << 5) |
+      (date.getUTCSeconds() >> 1),
+    date:
+      ((year - 1980) << 9) |
+      ((date.getUTCMonth() + 1) << 5) |
+      date.getUTCDate(),
+  };
+}
+
+/** Nonempty ZIP entries use DEFLATE; UTF-8 paths and classic ZIP limits are enforced. */
+async function writeZip(fd, entries) {
+  let offset = 0;
+  const append = (bytes) => {
+    if (offset + bytes.length >= ZIP_LIMIT)
+      throw new Error(
+        "Archive exceeds the 4 GiB classic ZIP limit; split this batch.",
+      );
+    writeAll(fd, bytes);
+    offset += bytes.length;
+  };
+  for (const entry of entries) {
+    const name = Buffer.from(entry.name, "utf8");
+    if (name.length > 65535)
+      throw new Error(`Archive entry path is too long: ${entry.name}`);
+    entry.offset = offset;
+    entry.dos = dosTime(entry.stat.mtime);
+    entry.crc = 0;
+    entry.size = 0;
+    // Empty files and directories have no file data in the ZIP format.
+    entry.empty = entry.directory || entry.stat.size === 0;
+    entry.method = entry.empty ? 0 : 8;
+    entry.flags = entry.empty ? 0x800 : 0x808;
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(entry.flags, 6);
+    local.writeUInt16LE(entry.method, 8);
+    local.writeUInt16LE(entry.dos.time, 10);
+    local.writeUInt16LE(entry.dos.date, 12);
+    local.writeUInt16LE(name.length, 26);
+    append(local);
+    append(name);
+    entry.dataOffset = offset;
+    const hash = crypto.createHash("sha256");
+    const measure = new Transform({
+      transform(chunk, encoding, callback) {
+        entry.size += chunk.length;
+        if (entry.size >= ZIP_LIMIT)
+          return callback(new Error(`File exceeds ZIP limit: ${entry.name}`));
+        entry.crc = zlib.crc32(chunk, entry.crc);
+        hash.update(chunk);
+        callback(null, chunk);
+      },
+    });
+    if (!entry.empty) {
+      const deflate = zlib.createDeflateRaw({ level: 6 });
+      await pipeline(
+        fs.createReadStream(entry.file),
+        measure,
+        deflate,
+        async (chunks) => {
+          for await (const chunk of chunks) append(chunk);
+        },
+      );
+    }
+    entry.hash = hash.digest("hex");
+    entry.compressedSize = offset - entry.dataOffset;
+    if (!entry.empty) {
+      const descriptor = Buffer.alloc(16);
+      descriptor.writeUInt32LE(0x08074b50, 0);
+      descriptor.writeUInt32LE(entry.crc, 4);
+      descriptor.writeUInt32LE(entry.compressedSize, 8);
+      descriptor.writeUInt32LE(entry.size, 12);
+      append(descriptor);
+    }
+  }
+  const centralOffset = offset;
+  for (const entry of entries) {
+    const name = Buffer.from(entry.name, "utf8");
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE((3 << 8) | 20, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(entry.flags, 8);
+    central.writeUInt16LE(entry.method, 10);
+    central.writeUInt16LE(entry.dos.time, 12);
+    central.writeUInt16LE(entry.dos.date, 14);
+    central.writeUInt32LE(entry.crc, 16);
+    central.writeUInt32LE(entry.compressedSize, 20);
+    central.writeUInt32LE(entry.size, 24);
+    central.writeUInt16LE(name.length, 28);
+    central.writeUInt32LE(
+      ((entry.stat.mode & 0xffff) * 65536 + (entry.directory ? 0x10 : 0)) >>> 0,
+      38,
+    );
+    central.writeUInt32LE(entry.offset, 42);
+    append(central);
+    append(name);
+  }
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(entries.length, 8);
+  end.writeUInt16LE(entries.length, 10);
+  end.writeUInt32LE(offset - centralOffset, 12);
+  end.writeUInt32LE(centralOffset, 16);
+  append(end);
+  fs.fsyncSync(fd);
+  return {
+    centralOffset,
+    centralSize: offset - centralOffset - end.length,
+    size: offset,
+  };
+}
+
+function verifyZipRecords(filename, entries, layout) {
+  const fd = fs.openSync(filename, "r");
+  const invalid = () => {
+    throw new Error(
+      "Archive record verification failed; source files were preserved.",
+    );
+  };
+  const read = (offset, length) => {
+    const bytes = Buffer.alloc(length);
+    if (fs.readSync(fd, bytes, 0, length, offset) !== length) invalid();
+    return bytes;
+  };
+  try {
+    if (fs.fstatSync(fd).size !== layout.size) invalid();
+    let centralOffset = layout.centralOffset;
+    for (const entry of entries) {
+      const expectedName = Buffer.from(entry.name, "utf8");
+      const local = read(entry.offset, 30);
+      if (
+        local.readUInt32LE(0) !== 0x04034b50 ||
+        local.readUInt16LE(4) !== 20 ||
+        local.readUInt16LE(6) !== entry.flags ||
+        local.readUInt16LE(8) !== entry.method ||
+        local.readUInt16LE(26) !== expectedName.length ||
+        local.readUInt16LE(28) !== 0 ||
+        !read(entry.offset + 30, expectedName.length).equals(expectedName)
+      )
+        invalid();
+      if (!entry.empty) {
+        const descriptor = read(entry.dataOffset + entry.compressedSize, 16);
+        if (
+          descriptor.readUInt32LE(0) !== 0x08074b50 ||
+          descriptor.readUInt32LE(4) !== entry.crc ||
+          descriptor.readUInt32LE(8) !== entry.compressedSize ||
+          descriptor.readUInt32LE(12) !== entry.size
+        )
+          invalid();
+      }
+      const central = read(centralOffset, 46);
+      if (
+        central.readUInt32LE(0) !== 0x02014b50 ||
+        central.readUInt16LE(6) !== 20 ||
+        central.readUInt16LE(8) !== entry.flags ||
+        central.readUInt16LE(10) !== entry.method ||
+        central.readUInt32LE(16) !== entry.crc ||
+        central.readUInt32LE(20) !== entry.compressedSize ||
+        central.readUInt32LE(24) !== entry.size ||
+        central.readUInt16LE(28) !== expectedName.length ||
+        central.readUInt16LE(30) !== 0 ||
+        central.readUInt16LE(32) !== 0 ||
+        central.readUInt16LE(34) !== 0 ||
+        central.readUInt32LE(42) !== entry.offset ||
+        !read(centralOffset + 46, expectedName.length).equals(expectedName)
+      )
+        invalid();
+      centralOffset += 46 + expectedName.length;
+    }
+    const end = read(centralOffset, 22);
+    if (
+      centralOffset !== layout.centralOffset + layout.centralSize ||
+      end.readUInt32LE(0) !== 0x06054b50 ||
+      end.readUInt16LE(4) !== 0 ||
+      end.readUInt16LE(6) !== 0 ||
+      end.readUInt16LE(8) !== entries.length ||
+      end.readUInt16LE(10) !== entries.length ||
+      end.readUInt32LE(12) !== layout.centralSize ||
+      end.readUInt32LE(16) !== layout.centralOffset ||
+      end.readUInt16LE(20) !== 0
+    )
+      invalid();
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+async function verifyZip(filename, entries, layout) {
+  // Payload integrity alone does not prove that ZIP readers can locate it.
+  verifyZipRecords(filename, entries, layout);
+  for (const entry of entries) {
+    if (entry.empty) continue;
+    let crc = 0;
+    let size = 0;
+    const hash = crypto.createHash("sha256");
+    await pipeline(
+      fs.createReadStream(filename, {
+        start: entry.dataOffset,
+        end: entry.dataOffset + entry.compressedSize - 1,
+      }),
+      zlib.createInflateRaw(),
+      async (chunks) => {
+        for await (const chunk of chunks) {
+          crc = zlib.crc32(chunk, crc);
+          size += chunk.length;
+          hash.update(chunk);
+        }
+      },
+    );
+    if (
+      crc !== entry.crc ||
+      size !== entry.size ||
+      hash.digest("hex") !== entry.hash
+    )
+      throw new Error(
+        `Archive verification failed for ${entry.name}; source files were preserved.`,
+      );
+  }
+}
+
+function freeSpace(root) {
+  const stat = fs.statfsSync(root, { bigint: true });
+  return {
+    available: Number(stat.bavail * stat.bsize),
+    total: Number(stat.blocks * stat.bsize),
+  };
+}
+
+/** Only canonical regular ZIPs in this project's archive are eligible for pruning. */
+function pruneArchives(
+  root,
+  policy = DEFAULTS,
+  protectedPaths = [],
+  measure = freeSpace,
+) {
+  const settings = storagePolicy(policy);
+  const folder = scopedPath(root, ".archive");
+  const protectedFiles = new Set(
+    [...protectedPaths, ...protectedArchives(root)].map((file) =>
+      path.resolve(file),
+    ),
+  );
+  const entries = fs
+    .readdirSync(folder)
+    .filter((name) => validName(name, ".zip"))
+    .map((name) => path.join(folder, name))
+    .filter((file) => !protectedFiles.has(file) && fs.lstatSync(file).isFile())
+    .sort((a, b) => path.basename(a).localeCompare(path.basename(b)));
+  const space = measure(folder);
+  const minimum = Math.max(
+    settings.minFreeBytes,
+    (space.total * settings.minFreePercent) / 100,
+  );
+  const target = Math.max(
+    settings.targetFreeBytes,
+    (space.total * settings.targetFreePercent) / 100,
+  );
+  const removed = [];
+  let available = space.available;
+  if (available < minimum) {
+    for (const file of entries) {
+      if (available >= target) break;
+      scopedPath(root, file);
+      // Do not discard a user file that merely has a canonical .zip filename.
+      const fd = fs.openSync(file, "r");
+      const magic = Buffer.alloc(4);
+      try {
+        fs.readSync(fd, magic, 0, 4, 0);
+      } finally {
+        fs.closeSync(fd);
+      }
+      if (magic.readUInt32LE() !== 0x04034b50) continue;
+      if (
+        protectedArchives(root).some(
+          (active) => path.resolve(active) === path.resolve(file),
+        )
+      )
+        continue;
+      fs.unlinkSync(file);
+      removed.push(path.relative(root, file));
+      available = measure(folder).available;
+    }
+  }
+  return {
+    removed,
+    available,
+    target,
+    lowSpace: available < (space.available < minimum ? target : minimum),
+  };
+}
+
+/** Compress all selected paths in one verified ZIP, then remove unchanged sources. */
+async function archivePaths(root, inputs, options = {}) {
+  ensureDirectories(root);
+  const settings = storagePolicy(options.policy);
+  const entries = gather(root, inputs);
+  const protectedFiles = new Set(
+    [...(options.protectedPaths || []), ...registeredLogPaths(root)].map(
+      (file) => path.resolve(file),
+    ),
+  );
+  if (entries.some((entry) => protectedFiles.has(entry.file)))
+    throw new Error(
+      "Cannot archive an active service log. Stop its service first.",
+    );
+  const pruned = pruneArchives(root, settings, options.protectedPaths);
+  // Reserve the final filename exclusively; publish compressed content only after verification.
+  const reserved = reserveName(root, ".archive", ".zip");
+  const temporary = scopedPath(
+    root,
+    `${reserved.filename}.${process.pid}.tmp`,
+    true,
+  );
+  fs.closeSync(reserved.fd);
+  let releaseLease;
+  let fd;
+  let published = false;
+  try {
+    // A concurrent maintainer must not prune this ZIP before source removal finishes.
+    releaseLease = archiveLease(root, reserved.filename);
+    fd = fs.openSync(temporary, "wx", 0o600);
+    const layout = await writeZip(fd, entries);
+    fs.closeSync(fd);
+    fd = undefined;
+    await verifyZip(temporary, entries, layout);
+    for (const entry of entries) {
+      scopedPath(root, entry.file);
+      if (
+        !unchanged(entry.stat, snapshot(entry.file)) ||
+        (!entry.directory && (await hashFile(entry.file)) !== entry.hash)
+      )
+        throw new Error(
+          `Source changed while archiving: ${entry.name}. No source files were removed.`,
+        );
+    }
+    fs.renameSync(temporary, reserved.filename);
+    published = true;
+    // Recheck each file immediately before unlinking. Never recursively delete a directory.
+    if (options.remove !== false) {
+      for (const entry of entries.filter((item) => !item.directory)) {
+        scopedPath(root, entry.file);
+        if (
+          !unchanged(entry.stat, snapshot(entry.file)) ||
+          (await hashFile(entry.file)) !== entry.hash
+        )
+          throw new Error(
+            `Source changed before deletion: ${entry.name}. Verified ZIP retained at ${reserved.filename}.`,
+          );
+        fs.unlinkSync(entry.file);
+      }
+      for (const entry of entries.filter((item) => item.directory).reverse()) {
+        scopedPath(root, entry.file);
+        fs.rmdirSync(entry.file);
+      }
+    }
+    const after = pruneArchives(
+      root,
+      settings,
+      [...(options.protectedPaths || []), reserved.filename],
+    );
+    const retention = {
+      ...after,
+      removed: [...pruned.removed, ...after.removed],
+      lowSpace:
+        after.lowSpace || (pruned.lowSpace && after.available < after.target),
+    };
+    return {
+      filename: reserved.filename,
+      entries: entries.length,
+      pruned: retention.removed,
+      retention,
+    };
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+    if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
+    if (!published && fs.existsSync(reserved.filename))
+      fs.unlinkSync(reserved.filename);
+    if (releaseLease) releaseLease();
+  }
+}
+
+function trashPaths(root, maxBytes, includeAll) {
+  function bytes(file) {
+    scopedPath(root, file);
+    const stat = snapshot(file);
+    return stat.isFile()
+      ? stat.size
+      : fs.readdirSync(file).reduce(
+          (total, name) => total + bytes(path.join(file, name)),
+          0,
+        );
+  }
+  const folder = scopedPath(root, ".trash");
+  const entries = fs.readdirSync(folder).map((name) => {
+    const file = scopedPath(root, path.join(folder, name));
+    return { file, size: bytes(file), modified: snapshot(file).mtimeMs };
+  });
+  entries.sort(
+    (a, b) => a.modified - b.modified || a.file.localeCompare(b.file),
+  );
+  let total = entries.reduce((sum, entry) => sum + entry.size, 0);
+  const selected = [];
+  for (const entry of entries) {
+    if (!includeAll && total <= maxBytes) break;
+    selected.push(entry.file);
+    total -= entry.size;
+  }
+  return selected;
+}
+
+/** Invoke at start and periodically; a filesystem folder itself cannot reject writes. */
+async function maintainStorage(root, options = {}) {
+  ensureDirectories(root);
+  const policy = storagePolicy(options.policy);
+  const reserveLogs = options.reserveLogs ?? 0;
+  if (
+    !Number.isInteger(reserveLogs) ||
+    reserveLogs < 0 ||
+    reserveLogs > policy.maxLogs
+  )
+    throw new Error(
+      "reserveLogs must be an integer between zero and the log cap.",
+    );
+  const protectedFiles = new Set(
+    [...(options.protectedPaths || []), ...registeredLogPaths(root)].map(
+      (file) => path.resolve(file),
+    ),
+  );
+  const logs = scopedPath(root, ".logs");
+  const files = fs
+    .readdirSync(logs)
+    .map((name) => ({ name, file: path.join(logs, name) }));
+  const valid = files
+    .filter(
+      ({ name, file }) =>
+        validName(name, ".log") && fs.lstatSync(file).isFile(),
+    )
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const discard = files.filter(
+    ({ name, file }) =>
+      !validName(name, ".log") || !fs.lstatSync(file).isFile(),
+  );
+  let excess = Math.max(0, valid.length - (policy.maxLogs - reserveLogs));
+  for (const entry of valid) {
+    if (excess && !protectedFiles.has(entry.file)) {
+      discard.push(entry);
+      excess--;
+    }
+  }
+  if (excess)
+    throw new Error(
+      "All excess logs are active; stop a service before exceeding the log limit.",
+    );
+  const selected = discard.map(({ file }) => file);
+  selected.push(...trashPaths(root, policy.maxTrashBytes, options.includeTrash));
+  // Everything selected by one maintenance operation shares one verified ZIP.
+  const archived = selected.length
+    ? [await archivePaths(root, selected, { ...options, policy })]
+    : [];
+  const pruned = archived.length
+    ? archived[0].retention
+    : pruneArchives(root, policy, options.protectedPaths);
+  return { archived, pruned };
+}
+
+function createLog(root, options = {}) {
+  ensureDirectories(root);
+  const policy = storagePolicy(options.policy);
+  const logs = scopedPath(root, ".logs");
+  if (fs.readdirSync(logs).length >= policy.maxLogs)
+    throw new Error(
+      `Log limit (${policy.maxLogs}) reached. Run maintainStorage(root, { reserveLogs: 1 }) with the same policy before creating another log.`,
+    );
+  const reserved = reserveName(root, ".logs", ".log");
+  fs.closeSync(reserved.fd);
+  return reserved.filename;
+}
+
+return {
+  DEFAULTS,
+  LOG_RE,
+  ARCHIVE_RE,
+  storagePolicy,
+  scopedPath,
+  ensureDirectories,
+  timestamp,
+  validName,
+  createLog,
+  registerLog,
+  registeredLogPaths,
+  archivePaths,
+  maintainStorage,
+  pruneArchives,
+};
+
+})();
+
+const ROOT = process.cwd();
+const STATE = path.join(ROOT, ".moorkyz");
+const DEFAULT = "default";
+const DEFAULT_URL = "http://localhost:3000";
+const NAME_RE = /^[a-zA-Z][a-zA-Z0-9_-]{0,50}$/;
+const SCRIPT_RE = /^[a-zA-Z0-9][a-zA-Z0-9:_./-]*$/;
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const scriptCache = new Map();
+const managerVersions = new Map();
+const managerCache = new Map();
+
+function die(message, code = 1) {
+  console.error(`Error: ${message}`);
+  process.exit(code);
+}
+function info(message) {
+  console.log(message);
+}
+function openBrowser(url) {
+  if (process.env.CI || !process.stdout.isTTY) return;
+  const command =
+    process.platform === "win32"
+      ? "explorer.exe"
+      : process.platform === "darwin"
+        ? "open"
+        : "xdg-open";
+  const browser = spawn(command, [url], {
+    detached: true,
+    stdio: "ignore",
+    windowsHide: true,
+  });
+  browser.on("error", (error) => {
+    info(`Could not open ${url} in the default browser: ${error.message}`);
+  });
+  browser.unref();
+  info(`Opening ${url} in the default browser.`);
+}
+// Windows resolves package managers to .cmd shims, which require a shell.
+// Spawn cmd.exe explicitly instead of using shell: true, which concatenates arguments (DEP0190).
+function managerInvocation(manager, argv) {
+  return process.platform === "win32"
+    ? {
+        command: process.env.ComSpec || "cmd.exe",
+        argv: ["/d", "/s", "/c", manager, ...argv],
+      }
+    : { command: manager, argv };
+}
+
+function managerFor(project) {
+  if (managerCache.has(project.cwd)) return managerCache.get(project.cwd);
+  const folders = [];
+  let current = project.cwd;
+  while (true) {
+    folders.push(current);
+    if (current === ROOT || current === path.dirname(current)) break;
+    current = path.dirname(current);
+  }
+  for (const folder of folders) {
+    const manifest = path.join(folder, "package.json");
+    if (!exists(manifest)) continue;
+    const declared = readJson(manifest).packageManager;
+    if (declared != null) {
+      if (typeof declared !== "string" || !/^(pnpm|npm|yarn)@\d/.test(declared))
+        die(
+          `Unsupported packageManager in ${path.relative(ROOT, manifest)}. Supported package managers: pnpm, npm and yarn.`,
+        );
+      const manager = { name: declared.split("@")[0], declared, folder };
+      managerCache.set(project.cwd, manager);
+      return manager;
+    }
+  }
+  for (const folder of folders) {
+    const matches = [
+      ["pnpm", "pnpm-lock.yaml"],
+      ["npm", "package-lock.json"],
+      ["yarn", "yarn.lock"],
+    ].filter(([, filename]) => exists(path.join(folder, filename)));
+    if (matches.length > 1)
+      die(
+        `Multiple package-manager lockfiles in ${path.relative(ROOT, folder) || "."}. Set packageManager in package.json to choose the authoritative tool.`,
+      );
+    if (matches.length === 1) {
+      const manager = { name: matches[0][0], folder };
+      managerCache.set(project.cwd, manager);
+      return manager;
+    }
+  }
+  const manager = { name: "pnpm", folder: project.cwd };
+  managerCache.set(project.cwd, manager);
+  return manager;
+}
+
+function scriptInvocation(project, script, extra = []) {
+  const manager = managerFor(project).name;
+  return managerInvocation(manager, [
+    "run",
+    script,
+    ...(manager === "npm" && extra.length ? ["--"] : []),
+    ...extra,
+  ]);
+}
+function exists(file) {
+  return fs.existsSync(file);
+}
+function readJson(file) {
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch (e) {
+    die(
+      `Cannot read valid JSON from ${path.relative(ROOT, file) || file}: ${e.message}`,
+    );
+  }
+}
+function safeProjectName(name) {
+  if (!NAME_RE.test(name))
+    die(`Invalid project name '${name}'. Use letters, digits, _ and - only.`);
+  return name;
+}
+function projectUrl(value, name) {
+  if (value == null) return DEFAULT_URL;
+  if (typeof value !== "string" || !value.trim())
+    die(`Invalid URL for '${name}'.`);
+  try {
+    const url = new URL(value);
+    if (!["http:", "https:"].includes(url.protocol))
+      throw new Error("unsupported protocol");
+    if (url.username || url.password)
+      throw new Error("credentials are not allowed in project URLs");
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    die(`Invalid URL for '${name}'. Use an http or https URL.`);
+  }
+}
+function portHosts(url) {
+  if (url.hostname === "localhost") return ["127.0.0.1", "::1"];
+  const hostname = url.hostname.replace(/^\[|\]$/g, "");
+  return net.isIP(hostname) ? [hostname] : ["127.0.0.1", "::1"];
+}
+function canListen(port, host) {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.once("error", (error) => {
+      if (["EADDRINUSE", "EACCES"].includes(error.code)) resolve(false);
+      else if (["EAFNOSUPPORT", "EADDRNOTAVAIL"].includes(error.code))
+        resolve(true);
+      else reject(error);
+    });
+    server.listen({ port, host, exclusive: true }, () =>
+      server.close((error) => (error ? reject(error) : resolve(true))),
+    );
+  });
+}
+async function assignedPort(project, names) {
+  const url = new URL(project.url);
+  const basePort = Number(url.port || (url.protocol === "https:" ? 443 : 80));
+  if (!Number.isInteger(basePort) || basePort < 1 || basePort > 65535)
+    die(`Invalid starting port for '${project.name}'.`);
+  const hosts = portHosts(url);
+  const preference = readPreferences(project.name);
+  const port = preference.configuredUrl === project.url && preference.port != null
+    ? preference.port
+    : basePort;
+  for (const name of names) {
+    if (name === project.name) continue;
+    const state = readState(name);
+    if (state && alive(state.pid) && state.port === port)
+      die(`Port ${port} is in use by managed project '${name}'. Configure distinct project URLs; no process was stopped.`);
+  }
+  const available = await Promise.all(hosts.map((host) => canListen(port, host)));
+  if (!available.every(Boolean))
+    die(`Port ${port} is unavailable for '${project.name}'. Inspect the listener or reserved-port settings, or change the configured URL. Unrelated processes are never stopped and the port is not changed automatically.`);
+  return port;
+}
+async function waitForPortRelease(project, entry) {
+  const url = new URL(runtimeUrl(project, entry));
+  const port = Number(url.port || (url.protocol === "https:" ? 443 : 80));
+  const deadline = Date.now() + 5000;
+  do {
+    const available = await Promise.all(
+      portHosts(url).map((host) => canListen(port, host)),
+    );
+    if (available.every(Boolean)) return;
+    await sleep(100);
+  } while (Date.now() < deadline);
+  throw new Error(`Port ${port} is still unavailable after stopping '${project.name}'. No replacement was started; inspect the listener before retrying.`);
+}
+function urlForPort(value, port) {
+  const url = new URL(value);
+  url.port = String(port);
+  return url.toString().replace(/\/$/, "");
+}
+function runtimeUrl(project, entry) {
+  if (entry?.url) return entry.url;
+  if (Number.isInteger(entry?.port)) return urlForPort(project.url, entry.port);
+  const preference = readPreferences(project.name);
+  if (
+    preference.configuredUrl === project.url &&
+    Number.isInteger(preference.port)
+  )
+    return urlForPort(project.url, preference.port);
+  return project.url;
+}
+function folderFor(input) {
+  if (typeof input !== "string") die("Configured cwd must be a string.");
+  const target = path.resolve(ROOT, input);
+  const rel = path.relative(ROOT, target);
+  if (rel === ".." || rel.startsWith(".." + path.sep) || path.isAbsolute(rel))
+    die(`Configured project path escapes repository: ${input}`);
+  if (!exists(target) || !fs.statSync(target).isDirectory())
+    die(`Project folder does not exist: ${input}`);
+  // Resolve symlinks to avoid allowing a config path to escape through a symlink.
+  const actual = fs.realpathSync(target);
+  const rootActual = fs.realpathSync(ROOT);
+  const actualRel = path.relative(rootActual, actual);
+  if (
+    actualRel === ".." ||
+    actualRel.startsWith(".." + path.sep) ||
+    path.isAbsolute(actualRel)
+  )
+    die(`Project symlink escapes repository: ${input}`);
+  return target;
+}
+function cfg() {
+  if (exists(STATE)) folderFor(".moorkyz");
+  if (exists(STATE)) storage.scopedPath(ROOT, ".moorkyz");
+  const filename = path.join(ROOT, "moorkyz.config.json");
+  const data = exists(filename) ? readJson(filename) : {};
+  if (!data || typeof data !== "object" || Array.isArray(data))
+    die("moorkyz.config.json must contain a JSON object.");
+  if (
+    data.projects != null &&
+    (typeof data.projects !== "object" || Array.isArray(data.projects))
+  )
+    die("projects must be an object.");
+  const raw = data.projects ?? {
+    [DEFAULT]: { cwd: ".", dev: "dev", prod: "start" },
+  };
+  const projects = Object.create(null);
+  for (const [name, settings] of Object.entries(raw)) {
+    safeProjectName(name);
+    if (!settings || typeof settings !== "object" || Array.isArray(settings))
+      die(`Configuration for '${name}' must be an object.`);
+    const cwd = folderFor(settings.cwd ?? ".");
+    const dev = settings.dev ?? "dev";
+    const prod = settings.prod ?? "start";
+    if (![dev, prod].every((s) => typeof s === "string" && SCRIPT_RE.test(s)))
+      die(`Invalid script name for '${name}'.`);
+    const portArgs = settings.portArgs;
+    if (
+      portArgs != null &&
+      (!Array.isArray(portArgs) ||
+        !portArgs.every(
+          (argument) =>
+            typeof argument === "string" &&
+            /^[a-zA-Z0-9_{}=:/.-]+$/.test(argument),
+        ))
+    )
+      die(
+        `portArgs for '${name}' must contain safe CLI arguments; use {port} as the port placeholder.`,
+      );
+    const startupTimeoutMs = settings.startupTimeoutMs ?? 20000;
+    if (
+      !Number.isInteger(startupTimeoutMs) ||
+      startupTimeoutMs < 1000 ||
+      startupTimeoutMs > 300000
+    )
+      die(
+        `startupTimeoutMs for '${name}' must be an integer from 1000 to 300000.`,
+      );
+    projects[name] = {
+      name,
+      cwd,
+      dev,
+      prod,
+      url: projectUrl(settings.url, name),
+      portArgs,
+      startupTimeoutMs,
+    };
+  }
+  const defaultProject =
+    data.defaultProject ??
+    (Object.keys(projects).length === 1 ? Object.keys(projects)[0] : null);
+  if (
+    defaultProject !== null &&
+    (typeof defaultProject !== "string" ||
+      !Object.hasOwn(projects, defaultProject))
+  )
+    die("Configured defaultProject must name an existing project.");
+  return {
+    projects,
+    defaultProject,
+    storage: storage.storagePolicy(data.storage),
+  };
+}
+function targetNames(config, raw, allowAll) {
+  const name = raw || config.defaultProject;
+  if (!name)
+    die(
+      'Choose a project name or "all" (or set defaultProject in moorkyz.config.json).',
+    );
+  if (name === "all") {
+    if (!allowAll) die("This command requires a single project name.");
+    return Object.keys(config.projects);
+  }
+  if (!Object.hasOwn(config.projects, name))
+    die(`Unknown project '${name}'. Run 'moorkyz list'.`);
+  return [name];
+}
+function statePath(name) {
+  return path.join(STATE, `${name}.json`);
+}
+function heartbeatPath(name) {
+  return path.join(STATE, `${name}.heartbeat.json`);
+}
+function logPath(name) {
+  const preference = readPreferences(name);
+  if (
+    preference.log &&
+    typeof preference.log === "string" &&
+    path.dirname(preference.log) === ".logs" &&
+    storage.validName(path.basename(preference.log), ".log")
+  )
+    return storage.scopedPath(ROOT, preference.log, true);
+  // Read-only compatibility for logs from the previous CLI version.
+  return storage.scopedPath(ROOT, path.join(".moorkyz", `${name}.log`), true);
+}
+function readPreferences(name) {
+  const file = storage.scopedPath(
+    ROOT,
+    path.join(".moorkyz", `${name}.preferences.json`),
+    true,
+  );
+  if (!exists(file)) return {};
+  const preference = readJson(file);
+  if (
+    !preference ||
+    typeof preference !== "object" ||
+    Array.isArray(preference) ||
+    (preference.port != null &&
+      (!Number.isInteger(preference.port) ||
+        preference.port < 1 ||
+        preference.port > 65535))
+  )
+    die(
+      `Invalid saved preferences in ${path.relative(ROOT, file)}. Inspect this file before retrying.`,
+    );
+  return preference;
+}
+function writeJsonAtomic(file, value) {
+  storage.scopedPath(ROOT, file, true);
+  const temporary = storage.scopedPath(
+    ROOT,
+    `${file}.${process.pid}.${crypto.randomBytes(4).toString("hex")}.tmp`,
+    true,
+  );
+  try {
+    fs.writeFileSync(temporary, JSON.stringify(value, null, 2), {
+      flag: "wx",
+      mode: 0o600,
+    });
+    fs.renameSync(temporary, file);
+  } finally {
+    try {
+      fs.unlinkSync(temporary);
+    } catch {
+      /* renamed or never created */
+    }
+  }
+}
+async function withProjectLock(name, operation) {
+  fs.mkdirSync(STATE, { recursive: true });
+  folderFor(".moorkyz");
+  storage.scopedPath(ROOT, ".moorkyz");
+  const file = storage.scopedPath(
+    ROOT,
+    path.join(STATE, `${name}.lock.json`),
+    true,
+  );
+  const token = crypto.randomBytes(16).toString("hex");
+  const deadline = Date.now() + 5000;
+  while (true) {
+    try {
+      fs.writeFileSync(file, JSON.stringify({ pid: process.pid, token }), {
+        flag: "wx",
+      });
+      break;
+    } catch (error) {
+      if (error.code !== "EEXIST") throw error;
+      // Do not automatically unlink stale locks: two reclaimers could remove
+      // a new owner's lock between reading the old PID and deleting the file.
+      if (Date.now() >= deadline)
+        die(
+          `Another Moorkyz operation holds the lock for '${name}'. Retry when it completes or review ${path.relative(ROOT, file)}.`,
+        );
+      await sleep(50);
+    }
+  }
+  const release = () => {
+    try {
+      const owner = JSON.parse(fs.readFileSync(file, "utf8"));
+      if (owner.token === token) fs.unlinkSync(file);
+    } catch {
+      /* already released */
+    }
+  };
+  const interrupt = () => {
+    release();
+    process.exit(130);
+  };
+  const terminate = () => {
+    release();
+    process.exit(143);
+  };
+  process.once("exit", release);
+  process.once("SIGINT", interrupt);
+  process.once("SIGTERM", terminate);
+  try {
+    return await operation();
+  } finally {
+    release();
+    process.removeListener("exit", release);
+    process.removeListener("SIGINT", interrupt);
+    process.removeListener("SIGTERM", terminate);
+  }
+}
+function readState(name) {
+  const file = storage.scopedPath(ROOT, statePath(name), true);
+  if (!exists(file)) return null;
+  try {
+    const state = JSON.parse(fs.readFileSync(file, "utf8"));
+    if (
+      !state ||
+      typeof state !== "object" ||
+      Array.isArray(state) ||
+      !/^[a-f0-9]{32}$/.test(state.token || "") ||
+      (state.pid != null && (!Number.isSafeInteger(state.pid) || state.pid < 1))
+    )
+      throw new Error(
+        "Expected an object containing a supervisor token and valid PID",
+      );
+    return state;
+  } catch (error) {
+    die(
+      `Invalid tracked state ${path.relative(ROOT, file)}: ${error.message}. Inspect it before retrying; no process was stopped.`,
+    );
+  }
+}
+function clearState(name, token) {
+  const entry = readState(name);
+  if (entry && entry.token === token) {
+    for (const f of [statePath(name), heartbeatPath(name)]) {
+      try {
+        fs.unlinkSync(f);
+      } catch {
+        /* already removed */
+      }
+    }
+  }
+}
+function alive(pid) {
+  if (!Number.isSafeInteger(pid) || pid < 1) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error.code === "EPERM";
+  }
+}
+function freshHeartbeat(name, entry) {
+  try {
+    const beat = JSON.parse(
+      fs.readFileSync(storage.scopedPath(ROOT, heartbeatPath(name)), "utf8"),
+    );
+    return (
+      beat.token === entry.token &&
+      beat.pid === entry.pid &&
+      Date.now() - beat.at >= 0 &&
+      Date.now() - beat.at < 12000
+    );
+  } catch {
+    return false;
+  }
+}
+function running(name) {
+  const entry = readState(name);
+  return entry && alive(entry.pid) && freshHeartbeat(name, entry)
+    ? entry
+    : null;
+}
+function packageScripts(project) {
+  if (scriptCache.has(project.cwd)) return scriptCache.get(project.cwd);
+  const file = path.join(project.cwd, "package.json");
+  if (!exists(file))
+    die(`No package.json in ${path.relative(ROOT, project.cwd) || "."}.`);
+  const scripts = readJson(file).scripts ?? {};
+  if (
+    !scripts ||
+    typeof scripts !== "object" ||
+    Array.isArray(scripts) ||
+    !Object.values(scripts).every((script) => typeof script === "string")
+  )
+    die("package.json scripts must be an object containing string commands.");
+  scriptCache.set(project.cwd, scripts);
+  return scripts;
+}
+function hasScript(scripts, name) {
+  return (
+    Object.hasOwn(scripts, name) &&
+    typeof scripts[name] === "string" &&
+    scripts[name].trim().length > 0
+  );
+}
+function requireManager(project) {
+  const manager = managerFor(project).name;
+  if (managerVersions.has(manager)) return managerVersions.get(manager);
+  const { command, argv } = managerInvocation(manager, ["--version"]);
+  const check = spawnSync(command, argv, {
+    cwd: project.cwd,
+    encoding: "utf8",
+    timeout: 5000,
+  });
+  if (check.error || check.status !== 0)
+    die(
+      `Cannot run ${manager}${check.error ? ` (${check.error.code || check.error.message})` : ` (exit ${check.status})`}. Install/activate the packageManager version in package.json, then run 'moorkyz doctor'.`,
+    );
+  const version = (check.stdout || "").trim();
+  managerVersions.set(manager, version);
+  return version;
+}
+function runScript(script, project) {
+  if (!SCRIPT_RE.test(script)) die(`Invalid script name: ${script}`);
+  if (!hasScript(packageScripts(project), script))
+    die(
+      `Script '${script}' is not defined in ${path.relative(ROOT, project.cwd) || "."}/package.json.`,
+    );
+  requireManager(project);
+  const { command, argv } = scriptInvocation(project, script);
+  const result = spawnSync(command, argv, {
+    cwd: project.cwd,
+    stdio: "inherit",
+  });
+  if (result.error) die(result.error.message);
+  return result.status == null ? 1 : result.status;
+}
+function worker(argv) {
+  const [name, token, mode] = argv;
+  if (
+    !NAME_RE.test(name || "") ||
+    !/^[a-f0-9]{32}$/.test(token || "") ||
+    !["dev", "prod"].includes(mode)
+  )
+    process.exit(2);
+  const config = cfg();
+  const project = config.projects[name];
+  if (!project) process.exit(2);
+  const state = readState(name);
+  if (!state || state.token !== token) process.exit(2);
+  let child;
+  let stopping = false;
+  const beat = () => {
+    try {
+      writeJsonAtomic(heartbeatPath(name), {
+        token,
+        pid: process.pid,
+        at: Date.now(),
+      });
+    } catch (err) {
+      console.error(`Heartbeat failed: ${err.message}`);
+    }
+  };
+  let heartbeatTimer;
+  let maintenanceTimer;
+  let releaseLog;
+  try {
+    // Project/script names are constrained and taken from local config; no raw shell arguments.
+    const scriptText = packageScripts(project)[project[mode]];
+    const portArgs =
+      project.portArgs ??
+      (/\bvite\b/.test(scriptText)
+        ? ["--port", "{port}", "--host", "127.0.0.1", "--strictPort"]
+        : /\bastro\b/.test(scriptText)
+          ? ["--port", "{port}", "--host", "127.0.0.1"]
+        : []);
+    const { command, argv } = scriptInvocation(
+      project,
+      project[mode],
+      portArgs.map((value) => value.replaceAll("{port}", String(state.port))),
+    );
+    child = spawn(command, argv, {
+      cwd: project.cwd,
+      stdio: "inherit",
+      env: {
+        ...process.env,
+        PORT: String(state.port),
+        NODE_ENV:
+          mode === "prod"
+            ? "production"
+            : process.env.NODE_ENV || "development",
+      },
+      windowsHide: true,
+    });
+  } catch (e) {
+    console.error(e.message);
+    cleanup(1);
+    return;
+  }
+  function cleanup(code) {
+    if (stopping) return;
+    stopping = true;
+    clearInterval(heartbeatTimer);
+    clearInterval(maintenanceTimer);
+    if (releaseLog) {
+      try {
+        releaseLog();
+      } catch (error) {
+        console.error(`Could not release the log lease: ${error.message}`);
+      }
+    }
+    clearState(name, token);
+    process.exit(code);
+  }
+  const shutdown = (signal) => {
+    if (stopping) return;
+    // When group termination is used, children receive the same signal. If
+    // started directly, forwarding the signal is still appropriate.
+    try {
+      if (child && child.pid) child.kill(signal);
+    } catch (error) {
+      console.error(`Could not forward ${signal}: ${error.message}`);
+    }
+    setTimeout(() => cleanup(0), 1500).unref();
+  };
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
+  child.on("spawn", () => {
+    try {
+      releaseLog = storage.registerLog(ROOT, logPath(name));
+    } catch (error) {
+      console.error(`Could not register the active log: ${error.message}`);
+    }
+    beat();
+    heartbeatTimer = setInterval(beat, 1500);
+    maintenanceTimer = setInterval(() => {
+      maintain(config, false).catch((error) =>
+        console.error(`Storage maintenance failed: ${error.message}`),
+      );
+    }, 30000);
+  });
+  child.on("error", (error) => {
+    console.error(
+      `Could not start ${managerFor(project).name}: ${error.message}`,
+    );
+    cleanup(1);
+  });
+  child.on("exit", (code, signal) => {
+    if (!stopping)
+      console.log(`Project '${name}' exited (${signal || code || 0}).`);
+    cleanup(code ?? (signal ? 1 : 0));
+  });
+}
+function activeLogPaths(config) {
+  return [
+    ...storage.registeredLogPaths(ROOT),
+    ...Object.keys(config.projects)
+      .filter((name) => {
+        const state = readState(name);
+        return state && alive(state.pid);
+      })
+      .map(logPath),
+  ];
+}
+async function maintain(config, includeTrash = false) {
+  const result = await withProjectLock("__storage", async () =>
+    storage.maintainStorage(ROOT, {
+      policy: config.storage,
+      protectedPaths: activeLogPaths(config),
+      includeTrash,
+    }),
+  );
+  reportStoragePressure(result.pruned);
+  return result;
+}
+function reportStoragePressure(retention) {
+  if (retention.lowSpace)
+    console.error(
+      "Warning: storage could not reach its free-space retention threshold. No more eligible archives can be deleted; free disk space manually outside .archive/.",
+    );
+}
+function connectable(port, host) {
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ port, host });
+    const done = (result) => {
+      socket.destroy();
+      resolve(result);
+    };
+    socket.setTimeout(300);
+    socket.once("connect", () => done(true));
+    socket.once("error", () => done(false));
+    socket.once("timeout", () => done(false));
+  });
+}
+async function startOne(project, mode, config) {
+  const name = project.name;
+  const script = project[mode];
+  if (!hasScript(packageScripts(project), script))
+    die(`${name}: package.json does not declare '${script}'.`);
+  requireManager(project);
+  const active = running(name);
+  if (active) {
+    info(
+      `Stopping the existing managed instance of '${name}' before starting it again.`,
+    );
+    await stopOne(project);
+  }
+  const previous = readState(name);
+  if (previous && alive(previous.pid))
+    die(
+      `Supervisor for '${name}' is alive but its heartbeat is unavailable. Inspect the service before starting another instance.`,
+    );
+  if (previous) info(`Removing stale state for ${name}.`);
+  storage.ensureDirectories(ROOT);
+  let port;
+  let url;
+  let log;
+  const token = crypto.randomBytes(16).toString("hex");
+  const state = {
+    name,
+    mode,
+    token,
+    // The starting CLI reserves this port until the supervisor PID is published.
+    pid: process.pid,
+    script,
+    startedAt: new Date().toISOString(),
+  };
+  // Publish the token before the supervisor can read it. The project lock
+  // protects publication from simultaneous start/stop/restart commands.
+  await withProjectLock("__ports", async () => {
+    port = await assignedPort(project, Object.keys(config.projects));
+    url = urlForPort(project.url, port);
+    await withProjectLock("__storage", async () => {
+      const options = {
+        policy: config.storage,
+        protectedPaths: activeLogPaths(config),
+      };
+      // Make room before creating the next log, so the cap is never exceeded.
+      const maintained = await storage.maintainStorage(ROOT, { ...options, reserveLogs: 1 });
+      reportStoragePressure(maintained.pruned);
+      log = storage.createLog(ROOT, { policy: config.storage });
+      writeJsonAtomic(path.join(STATE, `${name}.preferences.json`), {
+        port,
+        configuredUrl: project.url,
+        log: path.relative(ROOT, log).split(path.sep).join("/"),
+      });
+    });
+    Object.assign(state, { port, url, log: path.relative(ROOT, log) });
+    writeJsonAtomic(statePath(name), state);
+  });
+  const out = fs.openSync(log, "a");
+  let proc;
+  try {
+    proc = spawn(process.execPath, [CLI_FILE, "__run", name, token, mode], {
+      cwd: ROOT,
+      detached: true,
+      stdio: ["ignore", out, out],
+      windowsHide: true,
+    });
+  } finally {
+    fs.closeSync(out);
+  }
+  if (!proc.pid) {
+    proc.once("error", (error) =>
+      console.error(`Cannot launch supervisor: ${error.message}`),
+    );
+    clearState(name, token);
+    die(`Could not start ${name}.`);
+  }
+  writeJsonAtomic(statePath(name), { ...state, pid: proc.pid });
+  proc.unref();
+  const deadline = Date.now() + project.startupTimeoutMs;
+  while (Date.now() < deadline) {
+    await sleep(100);
+    if (
+      running(name) &&
+      (
+        await Promise.all(
+          portHosts(new URL(url)).map((host) => connectable(port, host)),
+        )
+      ).some(Boolean)
+    ) {
+      info(
+        `Started '${name}' (${mode}; supervisor PID ${proc.pid}). URL: ${url}. Logs: ${path.relative(ROOT, log)}`,
+      );
+      openBrowser(url);
+      return true;
+    }
+    if (!alive(proc.pid)) break;
+  }
+  if (running(name)) await stopOne(project);
+  const diagnostic = tailLog(log, 12);
+  console.error(
+    `Could not confirm '${name}' listening at ${url} within ${project.startupTimeoutMs} ms. ${project.portArgs ? "Check portArgs and the service logs." : "The script must use PORT or accept configured portArgs."} Inspect: moorkyz logs ${name}\n${diagnostic}`,
+  );
+  return false;
+}
+async function stopOne(project) {
+  const { name } = project;
+  const entry = readState(name);
+  const url = runtimeUrl(project, entry);
+  if (!entry) {
+    info(`Not running: ${name} — URL: ${url}`);
+    return true;
+  }
+  if (!running(name)) {
+    if (alive(entry.pid))
+      die(
+        `Supervisor for '${name}' is alive but cannot be verified. Inspect its heartbeat; tracking state has been preserved.`,
+      );
+    info(
+      `No verified live Moorkyz process for '${name}' at ${url}; leaving unrelated processes untouched.`,
+    );
+    clearState(name, entry.token);
+    return true;
+  }
+  try {
+    if (process.platform === "win32") {
+      const result = spawnSync(
+        "taskkill",
+        ["/PID", String(entry.pid), "/T", "/F"],
+        { windowsHide: true, encoding: "utf8", timeout: 10000 },
+      );
+      if (result.status !== 0 && alive(entry.pid))
+        die(`Failed to stop ${name}: ${result.stderr || result.stdout}`);
+    } else {
+      process.kill(-entry.pid, "SIGTERM");
+      for (let i = 0; i < 20 && alive(entry.pid); i++) await sleep(100);
+      // Never SIGKILL arbitrary/possibly reused PIDs. Report if still running.
+      if (alive(entry.pid) && freshHeartbeat(name, entry))
+        die(`'${name}' did not stop gracefully. Review its process manually.`);
+    }
+    await waitForPortRelease(project, entry);
+    clearState(name, entry.token);
+    info(`Stopped '${name}'. URL: ${url}`);
+    return true;
+  } catch (e) {
+    die(`Could not stop '${name}': ${e.message}`);
+  }
+}
+function statusOne(project) {
+  const { name } = project;
+  const entry = running(name);
+  const url = runtimeUrl(project, entry);
+  if (entry)
+    info(
+      `${name}: RUNNING (${entry.mode}, PID ${entry.pid}, started ${entry.startedAt}) — URL: ${url}`,
+    );
+  else info(`${name}: STOPPED — URL: ${url}`);
+}
+function tailLog(file, lines) {
+  // Read only the end of the file; large logs are not fully loaded into memory.
+  const st = fs.statSync(file);
+  const start = Math.max(0, st.size - 512 * 1024);
+  const fd = fs.openSync(file, "r");
+  const buf = Buffer.alloc(st.size - start);
+  try {
+    fs.readSync(fd, buf, 0, buf.length, start);
+  } finally {
+    fs.closeSync(fd);
+  }
+  const logLines = buf.toString("utf8").split(/\r?\n/);
+  if (logLines.at(-1) === "") logLines.pop();
+  return logLines.slice(-lines).join("\n");
+}
+function showLogs(name, lines, follow) {
+  let file = logPath(name);
+  if (!exists(file))
+    die(`No logs yet for '${name}'. Start it with 'moorkyz start ${name}'.`);
+  info(tailLog(file, lines));
+  if (!follow) return;
+  let offset = fs.statSync(file).size;
+  info("Following logs; press Ctrl+C to stop.");
+  const timer = setInterval(() => {
+    try {
+      const next = logPath(name);
+      if (next !== file) {
+        file = next;
+        offset = 0;
+      }
+      const current = fs.statSync(file);
+      if (current.size < offset) offset = 0;
+      if (current.size > offset) {
+        const readFd = fs.openSync(file, "r");
+        try {
+          let remaining = current.size - offset;
+          while (remaining > 0) {
+            const chunk = Buffer.alloc(Math.min(65536, remaining));
+            const bytes = fs.readSync(readFd, chunk, 0, chunk.length, offset);
+            if (!bytes) break;
+            process.stdout.write(chunk.subarray(0, bytes));
+            remaining -= bytes;
+            offset += bytes;
+          }
+        } finally {
+          fs.closeSync(readFd);
+        }
+      }
+    } catch {
+      /* File may be rotated */
+    }
+  }, 400);
+  process.on("SIGINT", () => {
+    clearInterval(timer);
+    process.exit(0);
+  });
+}
+function slugify(s) {
+  return (
+    s
+      .toLowerCase()
+      .normalize("NFKD")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 60) || "task"
+  );
+}
+function auditTemplate() {
+  return [
+    path.join(ROOT, "docs", "audits", "AUDIT-TEMPLATE.md"),
+    path.join(ROOT, "docs", "audits", "TEMPLATE.md"),
+    path.join(ROOT, "templates", "audit", "AUDIT.md"),
+  ].find(exists);
+}
+function createAudit(title) {
+  const source = auditTemplate();
+  if (!source)
+    die(
+      "Missing audit template. Add docs/audits/AUDIT-TEMPLATE.md.",
+    );
+  storage.scopedPath(ROOT, source);
+  const date = new Date();
+  const timestamp = date
+    .toISOString()
+    .replace(/\.\d{3}Z$/, "Z")
+    .replace(/:/g, "-");
+  const slug = slugify(title);
+  const dest = path.join(ROOT, "audits", `${timestamp}-${slug}.md`);
+  const auditFolder = storage.scopedPath(ROOT, path.dirname(dest), true);
+  fs.mkdirSync(auditFolder, { recursive: true });
+  const template = fs
+    .readFileSync(source, "utf8")
+    .replaceAll("{{AUDIT_ID}}", `${timestamp}-${slug}`)
+    .replaceAll("{{DATE_UTC}}", date.toISOString())
+    .replaceAll("{{DATE}}", date.toISOString())
+    .replaceAll("{{TITLE}}", () =>
+      title.replace(/[\r\n]+/g, " ").slice(0, 120),
+    )
+    .replaceAll("{{TASK_NAME}}", () =>
+      title.replace(/[\r\n]+/g, " ").slice(0, 120),
+    );
+  fs.writeFileSync(dest, template, { flag: "wx" });
+  info(
+    `Created ${path.relative(ROOT, dest)}. Fill in observed results before committing.`,
+  );
+}
+function listProjects(config) {
+  for (const project of Object.values(config.projects)) {
+    const url = runtimeUrl(project, running(project.name));
+    info(
+      `${project.name}${config.defaultProject === project.name ? " (default)" : ""}: ${path.relative(ROOT, project.cwd) || "."} — dev:${project.dev} prod:${project.prod} — URL: ${url}`,
+    );
+  }
+}
+function doctor(config) {
+  info(`Project root: ${ROOT}`);
+  info(
+    `Node.js: ${process.version}${Number(process.versions.node.split(".")[0]) < 24 ? " (recommended: Node 24 LTS)" : ""}`,
+  );
+  info(
+    `Moorkyz config: ${exists(path.join(ROOT, "moorkyz.config.json")) ? "present" : "defaults (single root project)"}`,
+  );
+  for (const project of Object.values(config.projects)) {
+    const manager = managerFor(project);
+    const { command, argv } = managerInvocation(manager.name, ["--version"]);
+    const installed = spawnSync(command, argv, {
+      cwd: project.cwd,
+      encoding: "utf8",
+      timeout: 5000,
+    });
+    info(
+      `  ${project.name} package manager: ${manager.name} ${installed.status === 0 ? installed.stdout.trim() : "MISSING"}${manager.declared ? ` (declared ${manager.declared})` : " (detected from lockfile/default)"}`,
+    );
+    const manifest = path.join(project.cwd, "package.json");
+    const scripts = exists(manifest)
+      ? Object.keys(readJson(manifest).scripts || {})
+      : [];
+    info(
+      `  ${project.name}: ${exists(manifest) ? `package.json OK; scripts: ${scripts.join(", ") || "none"}` : "package.json MISSING"}`,
+    );
+  }
+  info(
+    `Audit template: ${auditTemplate() ? "OK" : "MISSING"}`,
+  );
+  info(`Runtime directory: ${path.relative(ROOT, STATE)} (ignored by Git)`);
+  info(
+    `Storage: .logs/ (maximum ${config.storage.maxLogs}); .archive/ (ZIP); .trash/ (maximum ${config.storage.maxTrashBytes} bytes). Run 'moorkyz maintain' to enforce retention.`,
+  );
+}
+function renderReadme(markdown) {
+  const escape = (text) => text.replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+  const inline = (text) => escape(text)
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+  let inCode = false;
+  let paragraph = [];
+  let code = [];
+  let title = "README";
+  const content = [];
+  const flush = () => {
+    if (paragraph.length) content.push(`<p>${inline(paragraph.join(" "))}</p>`);
+    paragraph = [];
+  };
+  for (const line of markdown.split(/\r?\n/)) {
+    if (line.startsWith("```")) {
+      flush();
+      if (inCode) {
+        content.push(`<pre><code>${escape(code.join("\n"))}</code></pre>`);
+        code = [];
+      }
+      inCode = !inCode;
+    } else if (inCode) code.push(line);
+    else if (!line.trim()) flush();
+    else {
+      const heading = /^(#{1,3}) (.+)$/.exec(line);
+      if (heading) {
+        flush();
+        if (heading[1] === "#" && title === "README") title = heading[2].replaceAll("`", "");
+        content.push(`<h${heading[1].length}>${inline(heading[2])}</h${heading[1].length}>`);
+      } else paragraph.push(line);
+    }
+  }
+  if (inCode) throw new Error("README has an unclosed code fence.");
+  flush();
+  return '<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' + escape(title) + '</title><style>body{max-width:66rem;margin:3rem auto;padding:0 1.5rem;font:1rem/1.75 system-ui,sans-serif;color:#18251b;background:#fafbf7}a{color:#245d35}h1,h2,h3{line-height:1.25}pre,code{background:#eef1e8}pre{padding:1rem;overflow:auto}img{max-width:100%}a:focus-visible{outline:2px solid #245d35;outline-offset:4px}</style></head><body><nav><a href="README.md">Markdown source</a></nav><main>\n'
+    + content.join("\n") + "\n</main></body></html>\n";
+}
+function help(command) {
+  const commands = {
+    start:
+      "moorkyz start [project|all] [--prod]  Start fresh on the saved/configured port and open its URL.",
+    stop: "moorkyz stop [project|all]          Stop only services started and verified by Moorkyz.",
+    restart:
+      "moorkyz restart [project|all] [--prod]  Restart the service and open its URL in the default browser.",
+    status:
+      "moorkyz status [project|all]        Show the status of managed processes.",
+    logs: "moorkyz logs [project] [--lines 80] [--follow]  Show or follow a service log.",
+    list: "moorkyz list                         List configured projects.",
+    doctor:
+      "moorkyz doctor                       Check Node, the package manager, scripts, and repository prerequisites.",
+    verify:
+      "moorkyz verify [project]             Run package.json verify script, or available quality gates.",
+    build:
+      "moorkyz build [project]              Run package.json build script.",
+    test: "moorkyz test [project]               Run package.json test script.",
+    lint: "moorkyz lint [project]               Run package.json lint script.",
+    typecheck:
+      "moorkyz typecheck [project]          Run package.json typecheck script.",
+    security:
+      "moorkyz security [project]           Run a read-only package-manager vulnerability audit.",
+    install:
+      "moorkyz install [project]            Install dependencies reproducibly using the authoritative package manager and lockfile.",
+    run: "moorkyz run <script> [project]       Run an existing package.json script.",
+    audit:
+      'moorkyz audit "task description"       Create a draft in audits/ from docs/audits/AUDIT-TEMPLATE.md.',
+    readme:
+      "moorkyz readme                       Regenerate README.html from README.md.",
+    archive:
+      "moorkyz archive <path> [path ...]     Compress selected project paths in one verified ZIP, then remove their originals.",
+    maintain:
+      "moorkyz maintain                     Archive malformed/expired logs and trash; prune oldest archives under disk pressure.",
+    help: "moorkyz help [command]               Show general or command-specific help.",
+  };
+  if (command) {
+    if (!Object.hasOwn(commands, command))
+      die(`Unknown help topic '${command}'.`);
+    info(commands[command]);
+  } else {
+    info("Moorkyz — reusable project development CLI");
+    info("Usage: moorkyz <command> [project|all] [options]\n");
+    info("Add --dry-run to check a command name without executing it or changing anything.\n");
+    Object.values(commands).forEach(info);
+    info(
+      "\nRun from the target project root. With no config, a single root package.json is assumed.",
+    );
+    info(
+      "Add the node type with .\\.scripts\\project-types\\SetProjectType.cmd node (Windows) or .\\.scripts\\project-types\\SetProjectType.ps1 node (PowerShell).",
+      "For multiple Node projects, then copy moorkyz.config.example.json to moorkyz.config.json and edit.",
+    );
+    info(
+      "All platforms: node moorkyz help; Unix: ./moorkyz help (after chmod +x). See docs/INFRASTRUCTURE.md.",
+    );
+    info(
+      "State and saved ports: .moorkyz/; logs: .logs/; ZIP archives: .archive/; staging: .trash/ (100 GB maximum; all gitignored).",
+    );
+  }
+}
+async function main() {
+  const input = process.argv.slice(2);
+  const dryRun = input.includes("--dry-run");
+  const [command = "help", ...args] = input.filter((arg) => arg !== "--dry-run");
+  if (dryRun) {
+    help(command);
+    info(`Dry run: ${command} was not executed. No files, processes, package scripts or settings changed.`);
+    return;
+  }
+  if (command === "__run") {
+    worker(args);
+    return;
+  }
+  if (command === "help" || command === "--help" || command === "-h") {
+    help(args[0]);
+    return;
+  }
+  if (command === "readme") {
+    if (args.length) die("Usage: moorkyz readme");
+    const markdown = fs.readFileSync(storage.scopedPath(ROOT, "README.md"), "utf8");
+    const html = renderReadme(markdown);
+    fs.writeFileSync(storage.scopedPath(ROOT, "README.html", true), html);
+    info("Regenerated README.html.");
+    return;
+  }
+  const config = cfg();
+  if (command === "maintain") {
+    if (args.length) die("Usage: moorkyz maintain");
+    const result = await maintain(config, true);
+    for (const entry of result.archived)
+      info(
+        `Archived ${entry.entries} entries: ${path.relative(ROOT, entry.filename)}`,
+      );
+    info(
+      `Storage maintained. Pruned ${result.pruned.removed.length} old archives.`,
+    );
+    return;
+  }
+  if (command === "archive") {
+    if (!args.length || args.some((value) => value.startsWith("-")))
+      die("Usage: moorkyz archive <project-relative-path> [path ...]");
+    const result = await withProjectLock("__storage", async () =>
+      storage.archivePaths(ROOT, args, {
+        policy: config.storage,
+        protectedPaths: activeLogPaths(config),
+      }),
+    );
+    info(
+      `Archived ${result.entries} entries: ${path.relative(ROOT, result.filename)}`,
+    );
+    reportStoragePressure(result.retention);
+    return;
+  }
+  if (command === "list") {
+    listProjects(config);
+    return;
+  }
+  if (command === "doctor") {
+    doctor(config);
+    return;
+  }
+  if (command === "audit") {
+    const title = args.join(" ").trim();
+    if (!title || title.startsWith("-"))
+      die('Usage: moorkyz audit "description of completed task"');
+    createAudit(title);
+    return;
+  }
+  if (["start", "stop", "restart", "status"].includes(command)) {
+    const prod = args.includes("--prod");
+    if (
+      args.filter((x) => x !== "--prod").length > 1 ||
+      args.some((x) => x.startsWith("--") && x !== "--prod")
+    )
+      die(`Invalid arguments for ${command}; run 'moorkyz help ${command}'.`);
+    if (prod && !["start", "restart"].includes(command))
+      die("--prod is only valid for start or restart.");
+    const name = args.find((x) => x !== "--prod");
+    const names = targetNames(config, name, true);
+    let failed = false;
+    for (const n of names) {
+      if (command === "status") statusOne(config.projects[n]);
+      else
+        await withProjectLock(n, async () => {
+          if (command === "stop")
+            failed = !(await stopOne(config.projects[n])) || failed;
+          else
+            failed =
+              !(await startOne(
+                config.projects[n],
+                prod ? "prod" : "dev",
+                config,
+              )) || failed;
+        });
+    }
+    if (failed) process.exitCode = 1;
+    return;
+  }
+  if (command === "logs") {
+    const follow = args.includes("--follow");
+    const idx = args.indexOf("--lines");
+    const lines = idx !== -1 ? Number(args[idx + 1]) : 80;
+    if (!Number.isInteger(lines) || lines < 1 || lines > 10000)
+      die("--lines must be between 1 and 10000.");
+    const filtered = args.filter(
+      (arg, i) =>
+        arg !== "--follow" &&
+        arg !== "--lines" &&
+        (idx === -1 || i !== idx + 1),
+    );
+    if (filtered.length > 1 || filtered.some((x) => x.startsWith("-")))
+      die("Invalid logs arguments.");
+    showLogs(targetNames(config, filtered[0], false)[0], lines, follow);
+    return;
+  }
+  if (
+    [
+      "build",
+      "test",
+      "lint",
+      "typecheck",
+      "verify",
+      "security",
+      "install",
+      "run",
+    ].includes(command)
+  ) {
+    const script = command === "run" ? args.shift() : command;
+    if (!script || !SCRIPT_RE.test(script))
+      die("Usage: moorkyz run <existing-script> [project]");
+    if (args.length > 1 || args.some((x) => x.startsWith("-")))
+      die("Unexpected arguments. Run moorkyz help.");
+    const name = targetNames(config, args[0], false)[0];
+    const project = config.projects[name];
+    if (command === "security" || command === "install") {
+      const version = requireManager(project);
+      const manager = managerFor(project);
+      const modernYarn =
+        manager.name === "yarn" && Number(version.split(".")[0]) >= 2;
+      let argumentsForManager;
+      if (command === "security")
+        argumentsForManager =
+          manager.name === "yarn"
+            ? modernYarn
+              ? ["npm", "audit", "--all", "--recursive", "--severity", "high"]
+              : ["audit", "--level", "high"]
+            : ["audit", "--audit-level", "high"];
+      else {
+        const lock =
+          manager.name === "npm"
+            ? "package-lock.json"
+            : manager.name === "pnpm"
+              ? "pnpm-lock.yaml"
+              : "yarn.lock";
+        if (!exists(path.join(manager.folder, lock)))
+          die(
+            `Missing ${lock} in ${path.relative(ROOT, manager.folder) || "."}. Generate and review the lockfile with ${manager.name} before reproducible installation.`,
+          );
+        argumentsForManager =
+          manager.name === "npm"
+            ? ["ci"]
+            : [
+                "install",
+                manager.name === "yarn" && modernYarn
+                  ? "--immutable"
+                  : "--frozen-lockfile",
+              ];
+      }
+      const { command: executable, argv } = managerInvocation(
+        manager.name,
+        argumentsForManager,
+      );
+      const result = spawnSync(executable, argv, {
+        cwd: command === "install" ? manager.folder : project.cwd,
+        stdio: "inherit",
+      });
+      if (result.error)
+        die(`${manager.name} ${command} failed: ${result.error.message}`);
+      process.exitCode = result.status ?? 1;
+    } else if (
+      command === "verify" &&
+      !hasScript(packageScripts(project), "verify")
+    ) {
+      const scripts = packageScripts(project);
+      const available = hasScript(scripts, "validate")
+        ? ["validate"]
+        : ["format:check", "lint", "typecheck", "test", "build"].filter((s) =>
+            hasScript(scripts, s),
+          );
+      if (!available.length)
+        die(
+          "No verify/format:check/lint/typecheck/test/build scripts found in package.json.",
+        );
+      for (const s of available) {
+        info(`\n--- ${s} ---`);
+        if (runScript(s, project) !== 0) {
+          process.exitCode = 1;
+          break;
+        }
+      }
+    } else process.exitCode = runScript(script, project);
+    return;
+  }
+  die(`Unknown command '${command}'. Run 'moorkyz help'.`);
+}
+if (typeof module !== "undefined") module.exports = { ...storage, renderReadme };
+if (typeof require === "undefined" || require.main === module) main().catch((error) => {
+  console.error(`Error: ${error.message}`);
+  process.exitCode = 1;
+});

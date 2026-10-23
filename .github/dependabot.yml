@@ -1,0 +1,12 @@
+# Also enable Dependency graph, Dependabot alerts and security updates in the
+# repository settings; this file alone does not turn them on.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        patterns: ['*']

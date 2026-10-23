@@ -22,7 +22,7 @@ assert.ok(fs.statSync(cliPath).isFile(), "The moorkyz entry must stay at the rep
 assert.ok(!fs.existsSync(path.join(root, ".template", "moorkyz", "moorkyz")),
   "Do not move or duplicate the root CLI under .template.");
 const { renderReadme } = require(cliPath);
-const excluded = new Set([".git", ".moorkyz", ".logs", ".archive", ".trash",
+const excluded = new Set([".git", ".moorkyz", ".logs", ".archive",
   "node_modules", "coverage", "dist", "build", "tmp", ".tmp"]);
 
 function files(directory) {
@@ -104,11 +104,15 @@ const cli = fs.readFileSync(cliPath, "utf8");
 assert.doesNotMatch(cli, /require\(["']\.\.?\//, "The portable CLI must not depend on local helpers.");
 const ignored = fs.readFileSync(path.join(root, ".gitignore"), "utf8");
 const dockerIgnored = fs.readFileSync(path.join(root, ".template", "project-types", "helpers", "types", "docker", ".dockerignore"), "utf8");
-for (const name of [".logs", ".archive", ".trash", ".moorkyz"]) {
+for (const name of [".logs", ".archive", ".moorkyz"]) {
   assert.ok(ignored.split(/\r?\n/).includes(`/${name}/`), `${name} must stay Git-ignored.`);
   assert.ok(dockerIgnored.split(/\r?\n/).includes(name), `${name} must stay Docker-ignored.`);
 }
-assert.doesNotMatch(ignored, /^\/?audits\/?$/m, "Audit history must remain tracked.");
+assert.doesNotMatch(ignored, /^\/?\.audits\/?$/m, "Audit history must remain tracked.");
+assert.ok(exactPath(path.join(root, ".audits", "README.md")), "Missing versioned audit history.");
+assert.ok(exactPath(path.join(root, "docs", "AUDIT_TEMPLATE.md")), "Audit template must live directly under docs/.");
+assert.ok(!fs.existsSync(path.join(root, "audits")), "Reports must live under .audits/.");
+assert.ok(!fs.existsSync(path.join(root, "docs", "audits")), "The obsolete docs audit folder must not return.");
 
 const retired = new RegExp([
   ["create", "project"].join("") + "\\.ps1",
@@ -121,7 +125,7 @@ assert.ok(!fs.existsSync(path.join(templateToolsDirectory, ["make", "this", "you
 assert.doesNotMatch(cli, /\.projecttypes[/\\]/,
   "CLI help must reference .template/project-types/.");
 for (const filename of sources) {
-  if (path.relative(root, filename).split(path.sep)[0] === "audits") continue;
+  if (path.relative(root, filename).split(path.sep)[0] === ".audits") continue;
   assert.doesNotMatch(fs.readFileSync(filename, "utf8"), retired, path.relative(root, filename));
 }
 console.log("PASS: active documentation and PowerShell examples use current script names.");

@@ -2,7 +2,9 @@
   "defaultProject": "web",
   "storage": {
     "maxLogs": 50,
-    "maxTrashBytes": 100000000000,
+    "maxArchiveBytes": 100000000000,
+    "maxArchiveAgeDays": 30,
+    "archivePruneOrder": "oldest",
     "minFreeBytes": 1073741824,
     "targetFreeBytes": 2147483648,
     "minFreePercent": 5,

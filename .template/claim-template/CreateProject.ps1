@@ -9,7 +9,7 @@ then shows its plan, asks for confirmation and:
   1. copies the selected project types to their root paths (keeping all starters),
   2. permanently removes the listed template-only paths,
   3. replaces the project placeholder and GitHub owner in text files
-     (audits/ history and this folder are left as they are),
+     (.audits/ history and this folder are left as they are),
   4. sets the README title and regenerates README.html when Node.js is available.
 Rerunning is safe. It always ends with "Press any key to continue".
 
@@ -43,7 +43,7 @@ $configPath = Join-Path (Join-Path $setupDir 'helpers') 'setup.config.json'
 $cliPath = if ($root) { Join-Path $root 'moorkyz' } else { $null }
 $typesDir = if ($root) { Join-Path $root '.template\project-types\helpers\types' } else { $null }
 $typeSelector = if ($root) { Join-Path $root '.template\project-types\SetProjectType.ps1' } else { $null }
-$topLevelSkip = '.git', '.moorkyz', '.logs', '.archive', '.trash', 'audits'
+$topLevelSkip = '.git', '.moorkyz', '.logs', '.archive', '.audits'
 $binaryExtensions = '.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.woff', '.woff2', '.pdf', '.zip'
 
 function Wait-Key {

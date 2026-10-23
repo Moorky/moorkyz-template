@@ -5,7 +5,6 @@ export default [
       ".moorkyz/**",
       ".logs/**",
       ".archive/**",
-      ".trash/**",
       "coverage/**",
       "dist/**",
       "build/**",

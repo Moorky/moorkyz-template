@@ -24,7 +24,6 @@ Thumbs.db
 Desktop.ini
 
 # Local runtime and recoverable data
-/.trash/
 /.logs/
 /.archive/
 /.moorkyz/

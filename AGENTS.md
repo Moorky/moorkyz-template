@@ -67,9 +67,9 @@ data as a regression-test fixture.
   On Windows, `.template/project-types/SetProjectType.cmd` launches the same selector.
   Shared CLI tooling, maintenance checkups and their Node pin/CI are not an application stack.
   Add deployment workflows only once the stack and deployment contract are documented.
-- Keep `README.md`, `README.html`, `docs/` and `audits/` consistent;
+- Keep `README.md`, `README.html`, `docs/` and `.audits/` consistent;
   regenerate HTML with `node moorkyz readme`.
-- Keep `.trash/`, `.logs/`, `.archive/` and `.moorkyz/` ignored and free of committed
+- Keep `.logs/`, `.archive/` and `.moorkyz/` ignored and free of committed
   placeholders. Maintenance checkups must be read-only; action-level regression
   checks use disposable temporary directories, never existing user data.
 - Claim a template copy once by filling in `.template/claim-template/helpers/setup.config.json` and running

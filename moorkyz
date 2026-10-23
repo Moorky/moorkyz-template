@@ -24,7 +24,9 @@ const LOG_RE = /^log_\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-\d{3}\.log$/;
 const ARCHIVE_RE = /^log_\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-\d{3}\.zip$/;
 const DEFAULTS = Object.freeze({
   maxLogs: 50,
-  maxTrashBytes: 100_000_000_000,
+  maxArchiveBytes: 100_000_000_000,
+  maxArchiveAgeDays: 30,
+  archivePruneOrder: "oldest",
   minFreeBytes: 1024 ** 3,
   targetFreeBytes: 2 * 1024 ** 3,
   minFreePercent: 5,
@@ -41,6 +43,7 @@ function storagePolicy(value = {}) {
   }
   const settings = { ...DEFAULTS, ...value };
   for (const [key, number] of Object.entries(settings)) {
+    if (key === "archivePruneOrder") continue;
     if (!Number.isFinite(number) || number < 0)
       throw new Error(`storage.${key} must be a non-negative number.`);
   }
@@ -51,12 +54,15 @@ function storagePolicy(value = {}) {
   )
     throw new Error("storage.maxLogs must be an integer from 1 to 50.");
   if (
-    !Number.isSafeInteger(settings.maxTrashBytes) ||
-    settings.maxTrashBytes > DEFAULTS.maxTrashBytes
+    !Number.isSafeInteger(settings.maxArchiveBytes)
   )
     throw new Error(
-      `storage.maxTrashBytes must be an integer from 0 to ${DEFAULTS.maxTrashBytes}.`,
+      "storage.maxArchiveBytes must be a non-negative safe integer (bytes).",
     );
+  if (!Number.isSafeInteger(settings.maxArchiveAgeDays))
+    throw new Error("storage.maxArchiveAgeDays must be a non-negative safe integer (days); 0 disables expiry.");
+  if (!["oldest", "largest"].includes(settings.archivePruneOrder))
+    throw new Error("storage.archivePruneOrder must be 'oldest' or 'largest'.");
   if (
     settings.minFreePercent > 100 ||
     settings.targetFreePercent > 100 ||
@@ -106,7 +112,7 @@ function scopedPath(root, input, allowMissing = false) {
 }
 
 function ensureDirectories(root) {
-  for (const name of [".moorkyz", ".logs", ".archive", ".trash"]) {
+  for (const name of [".moorkyz", ".logs", ".archive"]) {
     const folder = scopedPath(root, name, true);
     fs.mkdirSync(folder, { recursive: true });
     if (!fs.lstatSync(folder).isDirectory())
@@ -274,12 +280,15 @@ function timestamp(date = new Date()) {
 function validName(name, extension) {
   const expression = extension === ".log" ? LOG_RE : ARCHIVE_RE;
   if (!expression.test(name)) return false;
+  return timestamp(nameDate(name, extension)) + extension === name;
+}
+
+function nameDate(name, extension) {
   const pieces = name.slice(4, -extension.length).split("-").map(Number);
   const [year, month, day, hour, minute, second, millisecond] = pieces;
-  const date = new Date(
+  return new Date(
     Date.UTC(year, month - 1, day, hour, minute, second, millisecond),
   );
-  return timestamp(date) + extension === name;
 }
 
 function reserveName(root, folder, extension) {
@@ -635,8 +644,10 @@ function pruneArchives(
   policy = DEFAULTS,
   protectedPaths = [],
   measure = freeSpace,
+  now = Date.now(),
 ) {
   const settings = storagePolicy(policy);
+  if (!Number.isFinite(now)) throw new Error("Archive retention requires a finite current timestamp.");
   const folder = scopedPath(root, ".archive");
   const protectedFiles = new Set(
     [...protectedPaths, ...protectedArchives(root)].map((file) =>
@@ -646,9 +657,16 @@ function pruneArchives(
   const entries = fs
     .readdirSync(folder)
     .filter((name) => validName(name, ".zip"))
-    .map((name) => path.join(folder, name))
-    .filter((file) => !protectedFiles.has(file) && fs.lstatSync(file).isFile())
-    .sort((a, b) => path.basename(a).localeCompare(path.basename(b)));
+    .map((name) => {
+      const file = path.join(folder, name);
+      const stat = fs.lstatSync(file);
+      return { file, name, stat, created: nameDate(name, ".zip").getTime() };
+    })
+    .filter(({ stat }) => stat.isFile())
+    .sort((a, b) =>
+      (settings.archivePruneOrder === "largest" ? b.stat.size - a.stat.size : 0) ||
+      a.name.localeCompare(b.name),
+    );
   const space = measure(folder);
   const minimum = Math.max(
     settings.minFreeBytes,
@@ -660,32 +678,49 @@ function pruneArchives(
   );
   const removed = [];
   let available = space.available;
-  if (available < minimum) {
-    for (const file of entries) {
-      if (available >= target) break;
-      scopedPath(root, file);
-      // Do not discard a user file that merely has a canonical .zip filename.
-      const fd = fs.openSync(file, "r");
-      const magic = Buffer.alloc(4);
-      try {
-        fs.readSync(fd, magic, 0, 4, 0);
-      } finally {
-        fs.closeSync(fd);
-      }
-      if (magic.readUInt32LE() !== 0x04034b50) continue;
-      if (
-        protectedArchives(root).some(
-          (active) => path.resolve(active) === path.resolve(file),
-        )
-      )
-        continue;
-      fs.unlinkSync(file);
-      removed.push(path.relative(root, file));
-      available = measure(folder).available;
+  let bytes = entries.reduce((total, entry) => total + entry.stat.size, 0);
+  const underPressure = available < minimum;
+  const expired = (entry) => settings.maxArchiveAgeDays > 0 &&
+    now - entry.created > settings.maxArchiveAgeDays * 86_400_000;
+  const discarded = new Set();
+  function remove(entry) {
+    const { file, stat } = entry;
+    if (protectedFiles.has(file)) return;
+    scopedPath(root, file);
+    if (!unchanged(stat, snapshot(file)))
+      throw new Error(`Archive changed during retention; preserved: ${file}`);
+    // Do not discard a user file that merely has a canonical .zip filename.
+    const fd = fs.openSync(file, "r");
+    const magic = Buffer.alloc(4);
+    try {
+      if (!unchanged(stat, fs.fstatSync(fd)))
+        throw new Error(`Archive changed during retention; preserved: ${file}`);
+      fs.readSync(fd, magic, 0, 4, 0);
+    } finally {
+      fs.closeSync(fd);
     }
+    if (magic.readUInt32LE() !== 0x04034b50) return;
+    if (protectedArchives(root).some((active) => path.resolve(active) === file)) return;
+    scopedPath(root, file);
+    if (!unchanged(stat, snapshot(file)))
+      throw new Error(`Archive changed during retention; preserved: ${file}`);
+    fs.unlinkSync(file);
+    discarded.add(file);
+    removed.push(path.relative(root, file));
+    bytes -= stat.size;
+    available = measure(folder).available;
+  }
+  for (const entry of entries.filter(expired)) remove(entry);
+  for (const entry of entries) {
+    if (bytes <= settings.maxArchiveBytes && (!underPressure || available >= target)) break;
+    if (!discarded.has(entry.file) && !expired(entry)) remove(entry);
   }
   return {
     removed,
+    bytes,
+    maxBytes: settings.maxArchiveBytes,
+    overLimit: bytes > settings.maxArchiveBytes,
+    expiredRemaining: entries.filter((entry) => expired(entry) && !discarded.has(entry.file)).length,
     available,
     target,
     lowSpace: available < (space.available < minimum ? target : minimum),
@@ -782,37 +817,10 @@ async function archivePaths(root, inputs, options = {}) {
   }
 }
 
-function trashPaths(root, maxBytes, includeAll) {
-  function bytes(file) {
-    scopedPath(root, file);
-    const stat = snapshot(file);
-    return stat.isFile()
-      ? stat.size
-      : fs.readdirSync(file).reduce(
-          (total, name) => total + bytes(path.join(file, name)),
-          0,
-        );
-  }
-  const folder = scopedPath(root, ".trash");
-  const entries = fs.readdirSync(folder).map((name) => {
-    const file = scopedPath(root, path.join(folder, name));
-    return { file, size: bytes(file), modified: snapshot(file).mtimeMs };
-  });
-  entries.sort(
-    (a, b) => a.modified - b.modified || a.file.localeCompare(b.file),
-  );
-  let total = entries.reduce((sum, entry) => sum + entry.size, 0);
-  const selected = [];
-  for (const entry of entries) {
-    if (!includeAll && total <= maxBytes) break;
-    selected.push(entry.file);
-    total -= entry.size;
-  }
-  return selected;
-}
-
 /** Invoke at start and periodically; a filesystem folder itself cannot reject writes. */
 async function maintainStorage(root, options = {}) {
+  if (Object.hasOwn(options, "includeTrash"))
+    throw new Error("Trash staging was removed; use archivePaths(root, paths) to archive selected data directly.");
   ensureDirectories(root);
   const policy = storagePolicy(options.policy);
   const reserveLogs = options.reserveLogs ?? 0;
@@ -855,7 +863,6 @@ async function maintainStorage(root, options = {}) {
       "All excess logs are active; stop a service before exceeding the log limit.",
     );
   const selected = discard.map(({ file }) => file);
-  selected.push(...trashPaths(root, policy.maxTrashBytes, options.includeTrash));
   // Everything selected by one maintenance operation shares one verified ZIP.
   const archived = selected.length
     ? [await archivePaths(root, selected, { ...options, policy })]
@@ -1569,18 +1576,25 @@ function activeLogPaths(config) {
       .map(logPath),
   ];
 }
-async function maintain(config, includeTrash = false) {
+async function maintain(config) {
   const result = await withProjectLock("__storage", async () =>
     storage.maintainStorage(ROOT, {
       policy: config.storage,
       protectedPaths: activeLogPaths(config),
-      includeTrash,
     }),
   );
   reportStoragePressure(result.pruned);
   return result;
 }
 function reportStoragePressure(retention) {
+  if (retention.overLimit)
+    console.error(
+      `Warning: managed archives use ${retention.bytes} bytes, above storage.maxArchiveBytes (${retention.maxBytes}). Protected or unrecognized files were preserved.`,
+    );
+  if (retention.expiredRemaining)
+    console.error(
+      `Warning: ${retention.expiredRemaining} expired archive(s) could not be pruned; protected or unrecognized files were preserved.`,
+    );
   if (retention.lowSpace)
     console.error(
       "Warning: storage could not reach its free-space retention threshold. No more eligible archives can be deleted; free disk space manually outside .archive/.",
@@ -1823,17 +1837,14 @@ function slugify(s) {
   );
 }
 function auditTemplate() {
-  return [
-    path.join(ROOT, "docs", "audits", "AUDIT-TEMPLATE.md"),
-    path.join(ROOT, "docs", "audits", "TEMPLATE.md"),
-    path.join(ROOT, "templates", "audit", "AUDIT.md"),
-  ].find(exists);
+  const filename = path.join(ROOT, "docs", "AUDIT_TEMPLATE.md");
+  return exists(filename) ? filename : undefined;
 }
 function createAudit(title) {
   const source = auditTemplate();
   if (!source)
     die(
-      "Missing audit template. Add docs/audits/AUDIT-TEMPLATE.md.",
+      "Missing audit template. Add docs/AUDIT_TEMPLATE.md.",
     );
   storage.scopedPath(ROOT, source);
   const date = new Date();
@@ -1842,7 +1853,7 @@ function createAudit(title) {
     .replace(/\.\d{3}Z$/, "Z")
     .replace(/:/g, "-");
   const slug = slugify(title);
-  const dest = path.join(ROOT, "audits", `${timestamp}-${slug}.md`);
+  const dest = path.join(ROOT, ".audits", `${timestamp}-${slug}.md`);
   const auditFolder = storage.scopedPath(ROOT, path.dirname(dest), true);
   fs.mkdirSync(auditFolder, { recursive: true });
   const template = fs
@@ -1901,7 +1912,7 @@ function doctor(config) {
   );
   info(`Runtime directory: ${path.relative(ROOT, STATE)} (ignored by Git)`);
   info(
-    `Storage: .logs/ (maximum ${config.storage.maxLogs}); .archive/ (ZIP); .trash/ (maximum ${config.storage.maxTrashBytes} bytes). Run 'moorkyz maintain' to enforce retention.`,
+    `Storage: .logs/ (maximum ${config.storage.maxLogs}); .archive/ (maximum ${config.storage.maxArchiveBytes} bytes, ${config.storage.maxArchiveAgeDays || "no"} day expiry, ${config.storage.archivePruneOrder} first). Run 'moorkyz maintain' to enforce retention.`,
   );
 }
 function renderReadme(markdown) {
@@ -1970,13 +1981,13 @@ function help(command) {
       "moorkyz install [project]            Install dependencies reproducibly using the authoritative package manager and lockfile.",
     run: "moorkyz run <script> [project]       Run an existing package.json script.",
     audit:
-      'moorkyz audit "task description"       Create a draft in audits/ from docs/audits/AUDIT-TEMPLATE.md.',
+      'moorkyz audit "task description"       Create a draft in .audits/ from docs/AUDIT_TEMPLATE.md.',
     readme:
       "moorkyz readme                       Regenerate README.html from README.md.",
     archive:
       "moorkyz archive <path> [path ...]     Compress selected project paths in one verified ZIP, then remove their originals.",
     maintain:
-      "moorkyz maintain                     Archive malformed/expired logs and trash; prune oldest archives under disk pressure.",
+      "moorkyz maintain                     Archive malformed/excess logs; prune archives by configured size, age and disk-space limits.",
     help: "moorkyz help [command]               Show general or command-specific help.",
   };
   if (command) {
@@ -1999,7 +2010,7 @@ function help(command) {
       "All platforms: node moorkyz help; Unix: ./moorkyz help (after chmod +x). See docs/INFRASTRUCTURE.md.",
     );
     info(
-      "State and saved ports: .moorkyz/; logs: .logs/; ZIP archives: .archive/; staging: .trash/ (100 GB maximum; all gitignored).",
+      "State and saved ports: .moorkyz/; logs: .logs/; ZIP archives: .archive/ (all gitignored). Configure storage.maxArchiveBytes, maxArchiveAgeDays and archivePruneOrder.",
     );
   }
 }
@@ -2031,13 +2042,13 @@ async function main() {
   const config = cfg();
   if (command === "maintain") {
     if (args.length) die("Usage: moorkyz maintain");
-    const result = await maintain(config, true);
+    const result = await maintain(config);
     for (const entry of result.archived)
       info(
         `Archived ${entry.entries} entries: ${path.relative(ROOT, entry.filename)}`,
       );
     info(
-      `Storage maintained. Pruned ${result.pruned.removed.length} old archives.`,
+      `Storage maintained. Pruned ${result.pruned.removed.length} archives; ${result.pruned.bytes} managed archive bytes remain.`,
     );
     return;
   }

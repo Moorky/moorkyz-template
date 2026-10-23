@@ -60,6 +60,12 @@ Nothing is written to log files.
   hosts. It checks `ALL SET`, aggregated failure lists and exit codes, unchanged
   reruns, JSONC backups, preserved instructions, preview/dry-run behavior and
   redirected-input completion. No real VS Code settings or credentials are used.
+- [05-storage.ps1](helpers/checkups/05-storage.ps1) verifies archive policy
+  validation, exact byte/age boundaries, oldest/largest ordering, protected/live
+  archives, non-ZIP/link preservation, disk-space safeguards, log rotation and
+  explicit CLI warnings using disposable archives. It also checks the root
+  `docs/AUDIT_TEMPLATE.md` template, report generation in `.audits/` and history
+  preservation during project adoption. No cleanup targets existing data.
 
 ## Safe modes
 
@@ -83,8 +89,9 @@ more detailed preview that validates their inputs. Unlike `-WhatIf`, `-DryRun`
 does not require an adopted project's configuration.
 
 Checkups never apply changes to this repository or existing local data. The
-project-type and Copilot checkups create and remove only their own disposable
-fixtures; these do not replace the former lifecycle/storage suite.
+project-type, Copilot and storage checkups create and remove only their own
+disposable fixtures; the focused storage checks do not replace the former full
+lifecycle/storage suite.
 
 Add checkups as more `*.ps1` files (numeric prefixes control ordering), keeping
 all existing data read-only. Each must accept `-DryRun` and return without performing its check

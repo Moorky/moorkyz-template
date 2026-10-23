@@ -34,9 +34,9 @@ See [current names and locations](README.md#current-names-and-locations) for lat
   `tests/` (since removed; current checks use [maintenance](../.template/maintenance/RunCheckups.ps1)).
   There is no application runtime, development server,
   deployment destination, or additional npm dependency.
-- Audit discovery now uses the existing [template](../docs/audits/AUDIT-TEMPLATE.md),
+- Audit discovery now uses the existing [template](../docs/AUDIT_TEMPLATE.md),
   fills its actual placeholders, and writes drafts into root `audits/`.
-  The previous audit index was moved from `.audits/` to [audits/README.md](README.md).
+  The previous audit index was moved from `.audits/` to [.audits/README.md](README.md).
 - Updated the [README](../README.md) and
   [CLI guide](../docs/INFRASTRUCTURE.md). `node moorkyz readme` regenerates both
   [README.html](../README.html) and `READM.html` (since removed); tests reject stale

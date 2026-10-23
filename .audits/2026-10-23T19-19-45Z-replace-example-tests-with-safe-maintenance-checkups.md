@@ -42,7 +42,7 @@
 | [tooling CI](../.github/workflows/project-tooling.yml), [Node starter](../.template/project-types/helpers/types/node/package.json) | Maintenance runner replaces empty/example test commands; npm scripts require `pwsh` | Linux workflow configured but not executed locally |
 | [setup defaults](../.template/claim-template/helpers/setup.config.json), [setup guide](../.template/claim-template/README.md) | Remove obsolete test-removal default; retain maintenance checks after adoption | Setup itself was not applied to this repository |
 | [README Markdown](../README.md), [README HTML](../README.html), [CLI guide](../docs/INFRASTRUCTURE.md), [contributing](../CONTRIBUTING.md), [project types](../.template/project-types/README.md), [Copilot guide](../.template/copilot-settings/README.md) | Current checkup commands, safe options and limitations; HTML regenerated | Shared docs integrate concurrent owner work |
-| [agent guide](../AGENTS.md), [scheduler](../AGENT_SCHEDULER.md), [audit skill](../.agents/skills/task-audit/SKILL.md), [audit template](../docs/audits/AUDIT-TEMPLATE.md), [audit index](README.md) | Verification guidance and task evidence; explicitly document retired coverage | Self-review only |
+| [agent guide](../AGENTS.md), [scheduler](../AGENT_SCHEDULER.md), [audit skill](../.agents/skills/task-audit/SKILL.md), [audit template](../docs/AUDIT_TEMPLATE.md), [audit index](README.md) | Verification guidance and task evidence; explicitly document retired coverage | Self-review only |
 
 ## Verification
 

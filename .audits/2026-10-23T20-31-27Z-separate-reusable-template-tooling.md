@@ -35,7 +35,7 @@
 | [.template/](../.template/README.md) | Rename shared parent and clarify template-only purpose; preserve all four tools and helpers | All 78 original files accounted for; 32 byte-identical and 46 scoped text edits before this report |
 | [Project types](../.template/project-types/SetProjectType.ps1) and [Claim Template](../.template/claim-template/CreateProject.ps1) | Update parent paths, preserve shared-parent write protection and one-time adoption | Disposable preview/apply/rerun and protected-target checks |
 | [Maintenance](../.template/maintenance/README.md), [CI](../.github/workflows/project-tooling.yml), preset configs | Update entrypoint, fixture, ignore and package-command paths; assert template catalog title | Both-host full checks and all nine presets through both PowerShell hosts and CMD |
-| [Agent guide](../AGENTS.md), [task-audit skill](../.agents/skills/task-audit/SKILL.md), root docs and [audit template](../docs/audits/AUDIT-TEMPLATE.md) | Update current paths and appropriate tool-discovery guidance; regenerate HTML | Exact-case links and HTML freshness checked |
+| [Agent guide](../AGENTS.md), [task-audit skill](../.agents/skills/task-audit/SKILL.md), root docs and [audit template](../docs/AUDIT_TEMPLATE.md) | Update current paths and appropriate tool-discovery guidance; regenerate HTML | Exact-case links and HTML freshness checked |
 | [moorkyz](../moorkyz) | Keep at root; update only the project-type selector guidance string | Exact comparison proves runtime code unchanged |
 | [Prior audits](README.md) and [scheduler](../AGENT_SCHEDULER.md) | Repair current links, preserve historical evidence, record superseding name | Historical report prose/commands independently compared outside Markdown links |
 

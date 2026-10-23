@@ -1,7 +1,7 @@
 # Audits
 
 One report per task, named `YYYY-MM-DDTHH-MM-SSZ-task-slug.md` (UTC). Create a
-draft from [the template](../docs/audits/AUDIT-TEMPLATE.md) with
+draft from [the template](../docs/AUDIT_TEMPLATE.md) with
 `node moorkyz audit "task title"`, then record scope, changed files, actual
 validation results, security review, remaining blockers and human-review status.
 A generated draft is not verification. Commit it with the task's changes.
@@ -15,6 +15,8 @@ read the relevant guide and use that tool only when appropriate.
 
 | Historical reference | Current reference |
 |---|---|
+| Former `audits/` reports and `docs/audits/AUDIT-TEMPLATE.md` | Reports live in [.audits/](README.md); the [audit template](../docs/AUDIT_TEMPLATE.md) lives directly in `docs/` |
+| Former trash staging and `storage.maxTrashBytes` | Archive selected paths directly; configure archive size, oldest/largest pruning and age in the [storage guide](../docs/INFRASTRUCTURE.md#logs-and-archives) |
 | Former `.template-tools/` parent | [.template/](../.template/README.md) is the current reusable template tooling directory |
 | Former `.template-tools/copilot/` tool | [Copilot settings](../.template/copilot-settings/README.md) keeps the setup entrypoint and helpers together |
 | Former `.scripts/` shared parent | [.template/](../.template/README.md) is reusable template tooling, separate from project-owned code; see [rename audit](2026-10-23T20-31-27Z-separate-reusable-template-tooling.md) |
@@ -49,5 +51,6 @@ Project layout reports:
 
 Storage reports:
 
+- [Archive retention and hidden audit history](2026-10-23T21-14-08Z-archive-retention-and-hidden-audit-history.md).
 - [Hidden runtime folders and 100 GB trash cap](2026-10-23T18-24-37Z-hidden-runtime-folders-and-100-gb-trash-cap.md).
 - [Log naming, capped retention and compressed project archives](2026-10-23T18-11-13Z-logs-archive-retention.md).

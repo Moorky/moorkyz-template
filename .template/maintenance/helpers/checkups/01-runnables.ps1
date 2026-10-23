@@ -15,7 +15,7 @@ $node = (Get-Command node -CommandType Application -ErrorAction Stop | Select-Ob
 $version = & $node --version
 if ($LASTEXITCODE -ne 0 -or $version -notmatch '^v24\.') { throw "Node.js 24 LTS is required; found $version." }
 Write-Host "Node.js $version"
-$excluded = '.git', '.moorkyz', '.logs', '.archive', '.trash', 'node_modules', 'coverage', 'dist', 'build', 'tmp', '.tmp'
+$excluded = '.git', '.moorkyz', '.logs', '.archive', 'node_modules', 'coverage', 'dist', 'build', 'tmp', '.tmp'
 $extensions = '.ps1', '.cmd', '.bat', '.cjs', '.mjs', '.js', '.sh', '.py', '.exe', '.com'
 
 function Get-Runnables([string]$Directory) {

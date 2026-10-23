@@ -43,7 +43,7 @@ pass `-DryRun`. See [maintenance checkups](../maintenance/README.md).
 
 1. copies the selected project types to the repository root, never overwriting different files;
 2. deletes the `remove` paths;
-3. replaces the project placeholder and template GitHub owner in text files (`audits/` history and this folder stay unchanged);
+3. replaces the project placeholder and template GitHub owner in text files (`.audits/` history and this folder stay unchanged);
 4. sets the README title and regenerates `README.html` (needs Node.js).
 
 It always ends with "Press any key to continue". This is a one-time adoption

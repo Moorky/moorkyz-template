@@ -81,6 +81,7 @@ const toolEntrypoints = {
   "claim-template": ["CreateProject.ps1"],
   maintenance: ["RunCheckups.ps1"],
   "project-types": ["SetProjectType.ps1", "SetProjectType.cmd"],
+  "soft-copy": ["CopyTemplate.ps1"],
 };
 for (const [tool, entrypoints] of Object.entries(toolEntrypoints)) {
   const directory = path.join(templateToolsDirectory, tool);
@@ -98,7 +99,7 @@ for (const file of ["AGENTS.md", "README.md"]) {
     `${file} must point agents and users to the template-tool catalog.`);
 }
 assert.ok(exactPath(path.join(root, "moorkyz")), "The CLI must remain at the repository root.");
-console.log("PASS: all four tool folders have adjacent entrypoints/README, helpers are nested, root CLI is preserved, and template-tool discovery is documented.");
+console.log(`PASS: all ${Object.keys(toolEntrypoints).length} tool folders have adjacent entrypoints/README, helpers are nested, root CLI is preserved, and template-tool discovery is documented.`);
 assert.ok(!fs.existsSync(path.join(root, "READM.html")), "Retired duplicate READM.html must not return.");
 const cli = fs.readFileSync(cliPath, "utf8");
 assert.doesNotMatch(cli, /require\(["']\.\.?\//, "The portable CLI must not depend on local helpers.");

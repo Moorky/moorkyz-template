@@ -11,6 +11,7 @@ Run commands from the repository root unless a tool's README says otherwise.
 | [Maintenance](maintenance/README.md) | [RunCheckups.ps1](maintenance/RunCheckups.ps1) | Verify runnable syntax, safe modes, documentation and presets |
 | [Project types](project-types/README.md) | [SetProjectType.cmd](project-types/SetProjectType.cmd), [SetProjectType.ps1](project-types/SetProjectType.ps1) | Preview or add explicitly selected stack/tooling presets |
 | [Claim Template (use once)](claim-template/README.md) | [CreateProject.ps1](claim-template/CreateProject.ps1) | One-time adoption of a template copy for a real project; never apply in the template itself |
+| [Soft copy](soft-copy/README.md) | [CopyTemplate.ps1](soft-copy/CopyTemplate.ps1) | Choose a target and files in a lightweight Windows GUI; preserve existing files in normal mode, record JSON content pairs, or explicitly force replacements |
 | [Copilot settings](copilot-settings/README.md) | [Setup-CopilotProject.ps1](copilot-settings/Setup-CopilotProject.ps1) | Preview or configure reviewed VS Code/Copilot settings for a specified project or user |
 
 Every tool folder keeps its entry script(s) and `README.md` at that folder's root.

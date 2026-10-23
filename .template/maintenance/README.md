@@ -74,6 +74,13 @@ Nothing is written to log files.
   the [collection guide](../../designs/README.md). Remove this checkup with the
   optional collection if an adopted project does not retain it.
 
+- [07-soft-copy.ps1](helpers/checkups/07-soft-copy.ps1) verifies selected-file
+  copies, preserved existing files, exact JSON content pairs (including empty,
+  Unicode and binary data), opt-in force replacements, previews and path/link
+  refusal in disposable template/target directories. On Windows it also drives
+  the actual GUI controls and launcher, including force cancellation and
+  confirmation. It never copies into an existing user repository.
+
 ## Safe modes
 
 Every PowerShell entrypoint, including the runner and checkups, accepts `-DryRun`.

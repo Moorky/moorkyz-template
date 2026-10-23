@@ -1,9 +1,9 @@
 # Contributing
 
-Check the [template-tool catalog](.template-tools/README.md) when a task may need existing
+Check the [template-tool catalog](.template/README.md) when a task may need existing
 template tooling. Read the relevant README and use that tool when it fits; do not
 run all tools automatically. Keep template entrypoint(s) and README together in
-`.template-tools/<tool>/`, with support files under `helpers/`.
+`.template/<tool>/`, with support files under `helpers/`.
 Keep project-owned source and tooling separate from this reusable template baseline.
 
 Read [README.md](README.md), [AGENTS.md](AGENTS.md) and the
@@ -11,9 +11,9 @@ Read [README.md](README.md), [AGENTS.md](AGENTS.md) and the
 
 1. Keep each change focused and update related docs and tests.
 2. Keep the root stack-neutral; framework-specific files belong in
-   `.template-tools/project-types/helpers/types/<type>/` at their root-relative path. See the
-   [project types guide](.template-tools/project-types/README.md). Shared tooling stays in `.template-tools/`.
-3. Run `pwsh -NoProfile -File .\.template-tools\maintenance\RunCheckups.ps1 -NoPause` with
+   `.template/project-types/helpers/types/<type>/` at their root-relative path. See the
+   [project types guide](.template/project-types/README.md). Shared tooling stays in `.template/`.
+3. Run `pwsh -NoProfile -File .\.template\maintenance\RunCheckups.ps1 -NoPause` with
    Node.js 24 LTS on PATH, plus any product checks. Keep new checkups read-only
    and give PowerShell entrypoints a side-effect-free `-DryRun` option.
 4. Create an audit with `node moorkyz audit "task title"` and record actual results.

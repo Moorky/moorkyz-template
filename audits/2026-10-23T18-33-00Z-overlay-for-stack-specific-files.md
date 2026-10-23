@@ -1,8 +1,8 @@
 # Overlay for stack-specific files and unpack script
 
 Historical report: the overlay layout, selector name and move behavior below have been superseded.
-Use [SetProjectType.ps1](../.template-tools/project-types/SetProjectType.ps1) and the
-[current project types guide](../.template-tools/project-types/README.md), not the old commands below.
+Use [SetProjectType.ps1](../.template/project-types/SetProjectType.ps1) and the
+[current project types guide](../.template/project-types/README.md), not the old commands below.
 
 | Field | Value |
 |---|---|

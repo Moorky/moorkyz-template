@@ -1,8 +1,8 @@
 # Rename project type selector
 
 Historical report: the original filename and move behavior below document this rename only.
-Current entry points are [SetProjectType.ps1](../.template-tools/project-types/SetProjectType.ps1) and
-[CreateProject.ps1](../.template-tools/claim-template/CreateProject.ps1); selection now copies starters.
+Current entry points are [SetProjectType.ps1](../.template/project-types/SetProjectType.ps1) and
+[CreateProject.ps1](../.template/claim-template/CreateProject.ps1); selection now copies starters.
 
 | Field | Value |
 |---|---|

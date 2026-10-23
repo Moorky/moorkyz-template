@@ -1,0 +1,10 @@
+.git/
+.template/
+.moorkyz/
+.logs/
+.archive/
+.trash/
+node_modules/
+coverage/
+dist/
+build/

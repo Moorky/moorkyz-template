@@ -1,7 +1,7 @@
 # Security policy and contributing update
 
 Historical report: the placeholder URL and overlay references below describe this task's original state.
-Use the current [security policy](../SECURITY.md) and [project types guide](../.template-tools/project-types/README.md).
+Use the current [security policy](../SECURITY.md) and [project types guide](../.template/project-types/README.md).
 
 | Field | Value |
 |---|---|

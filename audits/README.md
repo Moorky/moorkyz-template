@@ -10,34 +10,37 @@ A generated draft is not verification. Commit it with the task's changes.
 
 Historical reports preserve their original commands, filenames and observed test
 results; those are not current setup instructions. Links point to current files.
-Use the [template-tool catalog](../.template-tools/README.md) when a task needs existing tooling;
+Use the [template-tool catalog](../.template/README.md) when a task needs existing tooling;
 read the relevant guide and use that tool only when appropriate.
 
 | Historical reference | Current reference |
 |---|---|
-| Former `.scripts/` shared parent | [.template-tools/](../.template-tools/README.md) is reusable template tooling, separate from project-owned code; see [rename audit](2026-10-23T20-31-27Z-separate-reusable-template-tooling.md) |
-| `overlay/unpack.ps1` or `.projecttypes/unpack.ps1` | [SetProjectType.cmd](../.template-tools/project-types/SetProjectType.cmd) on Windows; [SetProjectType.ps1](../.template-tools/project-types/SetProjectType.ps1) is the implementation; selected files are copied and starters retained |
-| `.optional/root/` or `overlay/` starters | [.template-tools/project-types/helpers/types/](../.template-tools/project-types/helpers/types/), grouped by core type and optional tooling preset; see the [project types guide](../.template-tools/project-types/README.md) |
-| Root `package.json` | [.template-tools/project-types/helpers/types/node/package.json](../.template-tools/project-types/helpers/types/node/package.json) |
-| Root `moorkyz.config.example.json` | [.template-tools/project-types/helpers/types/node/moorkyz.config.example.json](../.template-tools/project-types/helpers/types/node/moorkyz.config.example.json) |
-| Root `public/` | [.template-tools/project-types/helpers/types/web/public/](../.template-tools/project-types/helpers/types/web/public/) |
-| Root `Dockerfile` / `.dockerignore` | [.template-tools/project-types/helpers/types/docker/](../.template-tools/project-types/helpers/types/docker/) |
-| `createproject.ps1` and former `setups/Make This Yours/` / `.scripts/make-this-yours/` folder | [CreateProject.ps1](../.template-tools/claim-template/CreateProject.ps1) in [Claim Template (use once)](../.template-tools/claim-template/README.md); exact case matters on Linux |
+| Former `.template-tools/` parent | [.template/](../.template/README.md) is the current reusable template tooling directory |
+| Former `.template-tools/copilot/` tool | [Copilot settings](../.template/copilot-settings/README.md) keeps the setup entrypoint and helpers together |
+| Former `.scripts/` shared parent | [.template/](../.template/README.md) is reusable template tooling, separate from project-owned code; see [rename audit](2026-10-23T20-31-27Z-separate-reusable-template-tooling.md) |
+| `overlay/unpack.ps1` or `.projecttypes/unpack.ps1` | [SetProjectType.cmd](../.template/project-types/SetProjectType.cmd) on Windows; [SetProjectType.ps1](../.template/project-types/SetProjectType.ps1) is the implementation; selected files are copied and starters retained |
+| `.optional/root/` or `overlay/` starters | [.template/project-types/helpers/types/](../.template/project-types/helpers/types/), grouped by core type and optional tooling preset; see the [project types guide](../.template/project-types/README.md) |
+| Root `package.json` | [.template/project-types/helpers/types/node/package.json](../.template/project-types/helpers/types/node/package.json) |
+| Root `moorkyz.config.example.json` | [.template/project-types/helpers/types/node/moorkyz.config.example.json](../.template/project-types/helpers/types/node/moorkyz.config.example.json) |
+| Root `public/` | [.template/project-types/helpers/types/web/public/](../.template/project-types/helpers/types/web/public/) |
+| Root `Dockerfile` / `.dockerignore` | [.template/project-types/helpers/types/docker/](../.template/project-types/helpers/types/docker/) |
+| `createproject.ps1` and former `setups/Make This Yours/` / `.scripts/make-this-yours/` folder | [CreateProject.ps1](../.template/claim-template/CreateProject.ps1) in [Claim Template (use once)](../.template/claim-template/README.md); exact case matters on Linux |
 | `READM.html` | Removed duplicate; [README.html](../README.html) is the generated edition |
 | Root `package-lock.json` | Removed with the dependency-free root manifest; no baseline npm install step |
-| Bundled `tests/`, including `overlay.test.cjs`, `template.test.cjs` and `project-type-menu.test.cjs` | Removed by a later owner request; current checks run through [.template-tools/maintenance/RunCheckups.ps1](../.template-tools/maintenance/RunCheckups.ps1) |
+| Bundled `tests/`, including `overlay.test.cjs`, `template.test.cjs` and `project-type-menu.test.cjs` | Removed by a later owner request; current checks run through [.template/maintenance/RunCheckups.ps1](../.template/maintenance/RunCheckups.ps1) |
 
 ## Retired test suite
 
 The bundled `tests/` suite was removed when maintenance checkups were introduced.
 Historical references retain their original results; the removed files are not
-current verification instructions. The new [maintenance checkups](../.template-tools/maintenance/README.md)
+current verification instructions. The new [maintenance checkups](../.template/maintenance/README.md)
 cover runnable syntax, safe no-op entrypoints, documentation and preset selection
 in disposable fixtures; they do not replace the former lifecycle/storage action
 coverage. Existing repository data remains read-only.
 
 Project layout reports:
 
+- [Rename template tooling and Copilot settings](2026-10-23T21-00-02Z-rename-template-tooling-and-copilot-settings.md).
 - [Separate reusable template tooling](2026-10-23T20-31-27Z-separate-reusable-template-tooling.md).
 - [Update references for nested project types](2026-10-23T19-16-43Z-update-references-for-nested-project-types.md).
 - [Correct references and add popular selector presets](2026-10-23T19-11-19Z-correct-references-and-add-popular-selector-presets.md).

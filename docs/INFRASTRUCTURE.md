@@ -2,10 +2,10 @@
 
 Portable, dependency-free Node.js CLI for local project management. The
 self-contained [moorkyz](../moorkyz) entry must stay at the repository root,
-not under `.template-tools/`. Copy just the script if needed; it runs in
+not under `.template/`. Copy just the script if needed; it runs in
 CommonJS and ESM projects and always operates on the **current working directory**.
 
-Consult the [template-tool catalog](../.template-tools/README.md) when a task may need existing
+Consult the [template-tool catalog](../.template/README.md) when a task may need existing
 tooling. Use this CLI for audits, README generation or explicitly authorized
 project/storage actions; choose maintenance, setup or presets only when they fit.
 
@@ -26,7 +26,7 @@ moorkyz() { node /absolute/repo/moorkyz "$@"; }
 ```
 
 The CLI never edits profiles, installs packages or changes PATH. Keep reusable
-tool folders under `.template-tools/`, except the root `moorkyz` entry; optional personal shell aliases are not required and
+tool folders under `.template/`, except the root `moorkyz` entry; optional personal shell aliases are not required and
 are not installed by the template.
 
 ## Commands
@@ -63,7 +63,7 @@ Installs use `pnpm install --frozen-lockfile`, `npm ci`, `yarn install --frozen-
 
 Without `moorkyz.config.json`, one root project named `default` runs `dev` for `start` and `start` for `start --prod` (with `NODE_ENV=production`). The script must exist; nothing is fabricated.
 
-For several Node projects, select the `node` [project type](../.template-tools/project-types/README.md)
+For several Node projects, select the `node` [project type](../.template/project-types/README.md)
 to add `moorkyz.config.example.json`, then copy it to `moorkyz.config.json`:
 
 ```json
@@ -121,8 +121,8 @@ Free-space retention checks the archive filesystem before archival and after sou
 
 ## Verification
 
-Run `pwsh -NoProfile -File .\.template-tools\maintenance\RunCheckups.ps1 -NoPause` with Node.js
-24 LTS on PATH. The [maintenance runner](../.template-tools/maintenance/README.md) checks every
+Run `pwsh -NoProfile -File .\.template\maintenance\RunCheckups.ps1 -NoPause` with Node.js
+24 LTS on PATH. The [maintenance runner](../.template/maintenance/README.md) checks every
 script/runnable without applying its actions, then checks documentation,
 icon/CI references and preset configuration syntax. Selector preview/apply/rerun
 and failure checks use only newly created disposable copies, never this repository

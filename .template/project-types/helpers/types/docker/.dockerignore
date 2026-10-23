@@ -1,0 +1,17 @@
+.git
+.github
+.template
+node_modules
+coverage
+tmp
+.tmp
+*.log
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+.trash
+.logs
+.archive
+.moorkyz

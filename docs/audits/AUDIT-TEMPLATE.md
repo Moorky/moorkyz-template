@@ -27,7 +27,7 @@ Use `PASS`, `FAIL`, `NOT RUN` (with reason) or `N/A`; record exact commands.
 
 | Check | Result | Command / evidence |
 |---|---|---|
-| Maintenance checkups (`pwsh -NoProfile -File .\.template-tools\maintenance\RunCheckups.ps1 -NoPause`) | | |
+| Maintenance checkups (`pwsh -NoProfile -File .\.template\maintenance\RunCheckups.ps1 -NoPause`) | | |
 | Dependency audit | | |
 | `git diff --check` | | |
 

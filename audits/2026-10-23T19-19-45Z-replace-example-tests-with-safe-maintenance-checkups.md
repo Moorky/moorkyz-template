@@ -34,14 +34,14 @@
 
 | Path | Change | Risk |
 |---|---|---|
-| [maintenance/](../.template-tools/maintenance/README.md) | One runner and two read-only checkups; usage and extension contract | Custom checkups are trusted code, not a sandbox |
+| [maintenance/](../.template/maintenance/README.md) | One runner and two read-only checkups; usage and extension contract | Custom checkups are trusted code, not a sandbox |
 | `tests/` | Removed all six bundled test files and the now-empty directory | Previous action-level regression coverage is no longer shipped |
 | [moorkyz](../moorkyz) | Global `--dry-run` exits before command execution/configuration loading; rejects unknown command names | Checks entrypoint/command name only, not action arguments or behavior |
-| [selector](../.template-tools/project-types/SetProjectType.ps1), [project setup](../.template-tools/claim-template/CreateProject.ps1), [Copilot setup](../.template-tools/copilot/Setup-CopilotProject.ps1) | Early no-op `-DryRun`; existing CMD wrapper forwards it unchanged | Existing `-WhatIf` remains the input-aware preview |
-| [Copilot setup](../.template-tools/copilot/Setup-CopilotProject.ps1) | Resolve default ConfigPath after no-op guard instead of in parameter binding | Necessary for PowerShell 5.1 `-File` invocation; explicit ConfigPath semantics retained |
-| [tooling CI](../.github/workflows/project-tooling.yml), [Node starter](../.template-tools/project-types/helpers/types/node/package.json) | Maintenance runner replaces empty/example test commands; npm scripts require `pwsh` | Linux workflow configured but not executed locally |
-| [setup defaults](../.template-tools/claim-template/helpers/setup.config.json), [setup guide](../.template-tools/claim-template/README.md) | Remove obsolete test-removal default; retain maintenance checks after adoption | Setup itself was not applied to this repository |
-| [README Markdown](../README.md), [README HTML](../README.html), [CLI guide](../docs/INFRASTRUCTURE.md), [contributing](../CONTRIBUTING.md), [project types](../.template-tools/project-types/README.md), [Copilot guide](../.template-tools/copilot/README.md) | Current checkup commands, safe options and limitations; HTML regenerated | Shared docs integrate concurrent owner work |
+| [selector](../.template/project-types/SetProjectType.ps1), [project setup](../.template/claim-template/CreateProject.ps1), [Copilot setup](../.template/copilot-settings/Setup-CopilotProject.ps1) | Early no-op `-DryRun`; existing CMD wrapper forwards it unchanged | Existing `-WhatIf` remains the input-aware preview |
+| [Copilot setup](../.template/copilot-settings/Setup-CopilotProject.ps1) | Resolve default ConfigPath after no-op guard instead of in parameter binding | Necessary for PowerShell 5.1 `-File` invocation; explicit ConfigPath semantics retained |
+| [tooling CI](../.github/workflows/project-tooling.yml), [Node starter](../.template/project-types/helpers/types/node/package.json) | Maintenance runner replaces empty/example test commands; npm scripts require `pwsh` | Linux workflow configured but not executed locally |
+| [setup defaults](../.template/claim-template/helpers/setup.config.json), [setup guide](../.template/claim-template/README.md) | Remove obsolete test-removal default; retain maintenance checks after adoption | Setup itself was not applied to this repository |
+| [README Markdown](../README.md), [README HTML](../README.html), [CLI guide](../docs/INFRASTRUCTURE.md), [contributing](../CONTRIBUTING.md), [project types](../.template/project-types/README.md), [Copilot guide](../.template/copilot-settings/README.md) | Current checkup commands, safe options and limitations; HTML regenerated | Shared docs integrate concurrent owner work |
 | [agent guide](../AGENTS.md), [scheduler](../AGENT_SCHEDULER.md), [audit skill](../.agents/skills/task-audit/SKILL.md), [audit template](../docs/audits/AUDIT-TEMPLATE.md), [audit index](README.md) | Verification guidance and task evidence; explicitly document retired coverage | Self-review only |
 
 ## Verification

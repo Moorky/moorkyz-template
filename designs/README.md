@@ -7,6 +7,10 @@ Open [the collection](index.html) directly in a modern browser. No server,
 package installation, account, API key or internet connection is needed for
 the collection itself. External repository links need connectivity.
 
+To open every HTML page in this folder (recursively) in the default browser,
+run `pwsh -NoProfile -File .\designs\OpenAll.ps1`. Add `-DryRun` to list the
+files without opening them.
+
 The canonical [root README](../README.md) and its [HTML edition](../README.html)
 remain the baseline documentation. These are additional visual editions, not
 replacements, product runtimes or deployment configuration.

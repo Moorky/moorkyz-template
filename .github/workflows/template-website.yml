@@ -1,0 +1,50 @@
+name: Template website
+on:
+  push:
+    paths:
+      - index.html
+      - website/**
+      - designs/**
+      - .github/workflows/template-website.yml
+  pull_request:
+    paths:
+      - index.html
+      - website/**
+      - designs/**
+      - .github/workflows/template-website.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: template-website-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version-file: .node-version
+      - name: Verify catalog, viewer and packaging
+        run: |
+          node website/verify.mjs
+          node --test website/deploy/build.test.mjs
+      - name: Build and verify the production container
+        env:
+          SOURCE_COMMIT: ${{ github.sha }}
+        run: |
+          docker build --build-arg SOURCE_COMMIT="$SOURCE_COMMIT" --file website/deploy/Dockerfile --tag template-website-check .
+          trap 'docker rm --force template-website-check' EXIT
+          docker run --detach --name template-website-check --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges --publish 127.0.0.1:8080:8080 template-website-check
+          for _ in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8080/healthz; then break; fi
+            sleep 1
+          done
+          EXPECTED_COMMIT="$SOURCE_COMMIT" node website/deploy/verify.mjs http://127.0.0.1:8080
+      - name: Verify the full repository
+        run: .\.template\maintenance\RunCheckups.ps1 -NoPause
+        shell: pwsh

@@ -1,7 +1,13 @@
-# The foundation collection
+# Moorkyz Templates
 
 **20 original design directions. 20 complete README editions. 20 landing pages.
 One final template showcase.**
+
+The website showcases completed template designs, not a tools or services
+offering. Its public name is **Moorkyz Templates**. Showcase and landing copy,
+decorative artwork and search suggestions focus on the actual collection.
+README editions retain the complete technical repository documentation as
+sample content; those instructions are documentation, not advertised products.
 
 Open [the collection](index.html) directly in a modern browser. No server,
 package installation, account, API key or internet connection is needed for
@@ -76,7 +82,7 @@ be the project root. Use `docs --help` for the command summary.
 - Suggestions come from one generated local index,
   [search-index.js](assets/search-index.js): the twenty designs and their
   character phrases, styles, tones and page files, the README chapters, the
-  template tools and documents, the project-type presets and the workspace
+  collection guide, page-view settings and the workspace
   vocabulary in [search-dictionary.json](search-dictionary.json) (project name,
   the Moorkyz location `Karlsruhe`, view settings). Edit that dictionary for an
   adopted project; `build.mjs` refuses unknown fields, duplicates and `href`
@@ -91,7 +97,7 @@ be the project root. Use `docs --help` for the command summary.
   field.
 - `Enter` on an accepted or typed value then acts: a design opens its page of the
   current type, a chapter jumps to that heading (on a README page) or opens it, a
-  tool or document opens its README, and a style, tone or view setting opens the
+  collection guide opens its document, and a style, tone or view setting opens the
   filtered collection. Anything else searches the collection
   (`index.html?q=…#collection`); on the showcase this filters in place. The
   showcase also accepts `?q=`, `?style=` and `?view=landing|readme`.
@@ -116,7 +122,9 @@ be the project root. Use `docs --help` for the command summary.
   card artwork is an illustrative design thumbnail, not a screenshot of a README.
 - Every README includes the complete current root documentation, usable chapter
   navigation, code samples and root-relative links rewritten for its directory.
-- All landing pages promote the actual Moorkyz template. No customer counts,
+- All landing pages showcase their finished template design and matching README.
+  They link to collection pages and the template source, not internal utilities.
+  No customer counts,
   testimonials, pricing, uptime, application services or deployment destinations
   are invented. The advertised 20/20/40+1 counts are verified from real files.
 - To reuse a page, copy its numbered directory and the adjacent `assets`
@@ -175,13 +183,14 @@ node .\designs\verify.mjs
 uses the existing root CLI README renderer, adds full-document layouts and
 generates exactly 41 HTML pages plus the search index. [search.mjs](search.mjs)
 holds the shared search markup and index generation. Rebuild after changing the
-canonical README, the catalog, the presets or the search dictionary.
+canonical README, the catalog or the search dictionary.
 `--check` is read-only and fails for stale output; `--dry-run` performs no file
 reads or writes. Shared visual assets live in [assets](assets/).
 
 The [verification script](verify.mjs) checks page counts, unique directions,
 generated freshness, chapter completeness, links/anchors, local-only assets,
-landmarks and palette contrast. Browser checks additionally cover every page
+landmarks, palette contrast, the public website name and template-only marketing.
+Browser checks additionally cover every page
 at desktop/mobile sizes, reduced motion, no-JavaScript access and gallery
 interactions. Automated checks do not replace human visual/accessibility review.
 The regular maintenance runner discovers the read-only

@@ -102,6 +102,12 @@ for (const filename of pages) {
   assert.match(html, /^<!doctype html>/);
   assert.match(html, /<html lang="en">/);
   assert.match(html, /name="viewport"/);
+  assert.match(html, /<title>[^<]*\bMoorkyz Templates\b[^<]*<\/title>/, `${filename}: use the public website name.`);
+  const marketing = html.replace(/<article class="doc-body"[^>]*>[\s\S]*?<\/article>/, "");
+  assert.doesNotMatch(plainText(marketing), /\b(?:tools?|tooling|toolkit|CLI|presets?|maintenance)\b/i, `${filename}: promote templates, not repository utilities.`);
+  if (!filename.endsWith("README.html")) {
+    assert.doesNotMatch(html, /href="[^"]*(?:\.template\/|docs\/INFRASTRUCTURE|AGENTS\.md)/, `${filename}: marketing links must stay focused on the collection.`);
+  }
   assert.equal([...html.matchAll(/<h1(?:\s|>)/g)].length, 1, `${filename}: require one H1.`);
   assert.equal([...html.matchAll(/<main(?:\s|>)/g)].length, 1, `${filename}: require one main.`);
   assert.ok(html.includes('class="skip-link" href="#main"'));
@@ -116,7 +122,8 @@ for (const filename of pages) {
       continue;
     }
     assert.ok(!target.startsWith("//"), "No protocol-relative resources.");
-    const [local, fragment] = target.split("#");
+    const [localAndQuery, fragment] = target.split("#");
+    const local = localAndQuery.split("?")[0];
     const destination = local ? path.resolve(path.dirname(filename), decodeURIComponent(local)) : filename;
     exactPath(destination);
     if (fragment && destination.endsWith(".html") && destination.startsWith(directory + path.sep)) {
@@ -149,6 +156,8 @@ for (const copy of [
 ]) assert.doesNotMatch(copy, /<br>(?=\S)/, "Responsive line breaks need whitespace when hidden.");
 assert.match(showcase, /20<span> \/<\/span>/);
 assert.match(showcase, /40<span> \+ 1<\/span>/);
+assert.match(showcase, /5<span> \/<\/span><\/strong><p>Compact README themes/);
+assert.match(showcase, /<h1>Templates,<br><em>by design<\/em>/);
 assert.match(showcase, /<script src="assets\/predictive-search\.js" defer><\/script><script src="assets\/search-index\.js" defer><\/script><script src="assets\/site-search\.js" defer><\/script><script src="assets\/showcase\.js" defer>/, "Load the predictor, index and shared search before the showcase.");
 assert.doesNotMatch(showcase, /design-search|class="search-label"/, "The showcase uses the shared header search, not a second search field.");
 for (const filename of pages) {
@@ -156,6 +165,7 @@ for (const filename of pages) {
   const root = filename === path.join(directory, "index.html") ? "" : "../";
   const name = path.relative(directory, filename);
   assert.equal([...html.matchAll(/data-site-search/g)].length, 1, `${name}: exactly one shared search.`);
+  assert.match(html, /placeholder="Search templates, styles, pages"/, `${name}: collection-focused search copy.`);
   assert.ok(html.includes(`<link rel="stylesheet" href="${root}assets/search.css"><script src="${root}assets/predictive-search.js" defer></script><script src="${root}assets/search-index.js" defer></script><script src="${root}assets/site-search.js" defer></script>`), `${name}: shared search assets missing or out of order.`);
   assert.match(html, new RegExp(`<form class="site-search" role="search" action="${root.replaceAll(".", "\\.")}index\\.html#collection" data-site-search data-search-root="${root.replaceAll(".", "\\.")}" data-search-kind="(?:showcase|landing|readme)"[^>]*><label class="site-search-label" for="site-search">Search the collection</label><span class="site-search-icon" aria-hidden="true"></span><input id="site-search" name="q" type="search"`), `${name}: search markup must be identical.`);
   assert.match(html, /<header class="(?:site-header|showcase-header|document-header)">[\s\S]*?data-site-search[\s\S]*?<\/header>/, `${name}: search belongs in the page header.`);
@@ -170,5 +180,6 @@ console.log(`PASS: exactly 20 unique README editions, 20 unique landings and one
 console.log(`PASS: ${chapterTitles.length} complete chapters per README, semantic landmarks, all 100 palette contrast pairs >= 4.5:1.`);
 console.log("PASS: generated freshness, reduced-motion/mobile styles, local-only assets and dependency-free script syntax.");
 console.log(`PASS: one identical header search on all ${pages.length} pages, loading the shared predictor, generated index and controller.`);
+console.log("PASS: Moorkyz Templates branding on all 41 pages; template-only marketing and collection-focused links.");
 verifyDocumentation();
 verifyPredictiveSearch();

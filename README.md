@@ -24,7 +24,7 @@ Then document the stack and add its manifest, scripts and lockfile. A missing ap
 
 ## Design collection
 
-Explore [the foundation collection](designs/index.html): **20 complete README HTML editions, 20 landing pages and one final template showcase**. The twenty original directions range from quiet editorial layouts to orbital space and selective chromatic light. All pages open locally without a server, framework or third-party runtime dependencies.
+Explore [Moorkyz Templates](designs/index.html): **20 complete README HTML editions, 20 landing pages and one final template showcase**. The website showcases completed template designs, not a tools or services offering. The twenty original directions range from quiet editorial layouts to orbital space and selective chromatic light. All pages open locally without a server, framework or third-party runtime dependencies.
 
 The [collection guide](designs/README.md) includes every design, reference-study notes and regeneration instructions. The canonical README stays here; the additional editions contain the same documentation. After changing this file, run `node moorkyz readme` and `node designs/build.mjs`. Maintenance checks generated freshness, complete content and links. When removing the optional collection from an adopted project, remove its design checkup and documentation links together.
 

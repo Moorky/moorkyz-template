@@ -15,7 +15,9 @@ function verifyWorkspaceIndex(createPredictor, normalize) {
   const index = sandbox.MoorkyzSearchIndex;
   assert.equal(index.designs.length, 20);
   assert.ok(index.chapters.length >= 3 && index.chapters.every((chapter) => chapter.id && chapter.title && !/[<>]/.test(chapter.title)));
-  assert.ok(index.entries.some((entry) => entry.kind === "Preset"), "Project-type presets are indexed from real folders.");
+  assert.ok(index.entries.some((entry) => entry.value === "Moorkyz Templates" && entry.href === "index.html#collection"), "The website name opens the collection.");
+  assert.ok(index.entries.some((entry) => entry.value === "Collection guide"), "Collection guidance remains searchable.");
+  assert.ok(index.entries.every((entry) => !["Tool", "Preset"].includes(entry.kind) && !/\.template\/|AGENTS\.md|AGENT_SCHEDULER\.md|INFRASTRUCTURE\.md/.test(entry.href ?? "")), "The public search must not promote repository utilities.");
   const entries = [
     ...index.designs.flatMap((d) => [{ value: d.name, kind: "Design", weight: 40, contexts: [d.category, d.tone] }, ...d.note.split("/").map((phrase) => ({ value: phrase.trim(), kind: "Character", weight: 20 }))]),
     ...index.chapters.map((chapter) => ({ value: chapter.title, kind: "Chapter", weight: 25, contexts: ["readme"] })),
@@ -25,7 +27,7 @@ function verifyWorkspaceIndex(createPredictor, normalize) {
   const klse = workspace.predict("KLSE")[0];
   assert.deepEqual([klse.value, klse.kind, klse.completion.mode], ["Karlsruhe", "Location", "replace"], "KLSE -> Karlsruhe from the shipped workspace dictionary.");
   assert.deepEqual([workspace.predict("Karl")[0].value, workspace.predict("Karl")[0].completion.text], ["Karlsruhe", "sruhe"]);
-  assert.equal(workspace.predict("maint")[0].value, "Maintenance checkups");
+  assert.equal(workspace.predict("moorkyz tem")[0].value, "Moorkyz Templates");
   assert.equal(workspace.predict("glac")[0].value, "Glacier");
   assert.equal(workspace.predict("get st", { context: ["readme"] })[0].value, "Get started");
   assert.ok(index.entries.every((entry) => normalize(entry.value)), "Every dictionary value is searchable.");
@@ -33,10 +35,9 @@ function verifyWorkspaceIndex(createPredictor, normalize) {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "moorkyz-search-dictionary-"));
   try {
     const designsFolder = path.join(fixture, "designs");
-    fs.mkdirSync(path.join(fixture, ".template", "project-types", "helpers", "types", "node"), { recursive: true });
     fs.mkdirSync(designsFolder);
     fs.writeFileSync(path.join(fixture, "README.md"), "# Fixture\n");
-    const base = { directory: designsFolder, root: fixture, designs: [{ id: "01-a", name: "A", note: "n", category: "Quiet", tone: "dark", art: "paper" }], documentationThemes: ["paper"], chapters: [{ id: "x", title: "X" }] };
+    const base = { directory: designsFolder, designs: [{ id: "01-a", name: "A", note: "n", category: "Quiet", tone: "dark", art: "paper" }], documentationThemes: ["paper"], chapters: [{ id: "x", title: "X" }] };
     const write = (entries) => fs.writeFileSync(path.join(designsFolder, "search-dictionary.json"), JSON.stringify({ entries }));
     write([{ value: "Karlsruhe", kind: "Location" }, { value: "Fixture", kind: "Project", href: "../README.md" }]);
     assert.match(searchIndex(base), /"value": "Karlsruhe"/);
@@ -137,5 +138,5 @@ export function verifyPredictiveSearch() {
   for (const query of ["m", "mo", "moo", "moor"]) bulk.predict(query, { tiers: "fast" });
   const fast = (performance.now() - fastStart) / 4;
   assert.ok(fast < 15, `Immediate prefix prediction averaged ${fast.toFixed(1)} ms.`);
-  console.log(`PASS: predictive search: generated workspace index (KLSE -> Karlsruhe, tools, chapters, presets) and dictionary validation; KLSE -> Karlsruhe, prefix/typo/accent/abbreviation/phrase/alias/context/recency ranking and cache; 5,001-entry uncached average ${average.toFixed(1)} ms, fast tier ${fast.toFixed(1)} ms.`);
+  console.log(`PASS: predictive search: collection-focused index (KLSE -> Karlsruhe, templates, chapters, page views) and dictionary validation; KLSE -> Karlsruhe, prefix/typo/accent/abbreviation/phrase/alias/context/recency ranking and cache; 5,001-entry uncached average ${average.toFixed(1)} ms, fast tier ${fast.toFixed(1)} ms.`);
 }

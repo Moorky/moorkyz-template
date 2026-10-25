@@ -22,6 +22,21 @@ Run [CreateProject.ps1](.template/claim-template/CreateProject.ps1) (right-click
 
 Then document the stack and add its manifest, scripts and lockfile. A missing application fails explicitly instead of starting a fabricated server.
 
+## Template readiness
+
+The shared baseline is usable without adopting a product stack. Some values must remain project-owned rather than being filled with invented defaults:
+
+| Area | Included baseline | Complete in the adopted project |
+|---|---|---|
+| Identity | Template name, repository links and Apache-2.0 license | Real project name, owner, description and applicable attribution |
+| Adoption | Validated configuration and previewable, opt-in presets | Review every setup value and removal before applying; never claim this template repository |
+| Runtime | Node.js 24 for shared tooling; PowerShell 5.1+ / PowerShell 7 | Actual application language, dependencies, package-manager pin, lockfile and commands |
+| Browser assets | Local designs, icons and a web-manifest starter | Product branding, supported browsers, accessibility and real application URLs |
+| Packaging | Optional Docker configuration starter | Pinned image, actual build/start commands, non-root runtime and health check |
+| Operations | Local logs, recoverable archives and verification | Hosting, domain, backups, monitoring and privately managed credentials |
+
+Placeholders in adoption configuration, example project paths and opt-in presets are intentional. Review the [preset completion checklist](.template/project-types/README.md#complete-the-selected-presets) before treating copied configuration as production-ready. No template command provisions infrastructure, establishes account access or verifies a live deployment.
+
 ## Design collection
 
 Explore [Moorkyz Templates](designs/index.html): **20 complete README HTML editions, 20 landing pages and one final template showcase**. The website showcases completed template designs, not a tools or services offering. The twenty original directions range from quiet editorial layouts to orbital space and selective chromatic light. All pages open locally without a server, framework or third-party runtime dependencies.
@@ -73,3 +88,11 @@ The existing low-disk-space safeguard can prune earlier using the same chosen or
 ## Verification
 
 CI runs `.template/maintenance/RunCheckups.ps1 -NoPause` with PowerShell on Linux and Windows using the pinned Node version, pinned actions and a read-only token. Checkups cover runnable syntax, no-op entrypoints, documentation links/current names, icons/CI references, `README.html` freshness and preset configuration syntax; the bundled example tests have been removed. Selector, Copilot setup and storage/audit action checks run only in newly created disposable copies, with isolated user profiles for setup, preserving existing user files and source bytes. Storage checks exercise byte/age boundaries, pruning order, archive protections, warnings and report generation. No application, live-repository setup, live storage cleanup or package script is executed. All PowerShell scripts accept `-DryRun`; the CLI accepts `--dry-run`, and the CMD selector forwards `-DryRun`. These no-op modes do not validate real action behavior; use the setup scripts' existing `-WhatIf` for input-aware previews. Regenerate `README.html` with `node moorkyz readme`.
+
+## Support and license
+
+Use [CONTRIBUTING.md](CONTRIBUTING.md) for change proposals, reproducible bug reports and the review checklist. Follow [SECURITY.md](SECURITY.md) for private vulnerability reports; never include credentials or private recovery data in public reports.
+
+This template is distributed under the [Apache License 2.0](LICENSE). Preserve applicable license notices when reusing it, and review the licenses of any dependencies or additional assets introduced by an adopted project.
+
+Authoritative setup references: [Node.js release support](https://nodejs.org/en/about/previous-releases), [PowerShell installation](https://learn.microsoft.com/en-us/powershell/scripting/install/install-powershell) and the [template-tool catalog](.template/README.md). The repository pins the supported Node major rather than automatically moving to the newest release.

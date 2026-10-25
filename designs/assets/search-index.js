@@ -175,6 +175,10 @@ globalThis.MoorkyzSearchIndex = {
    "title": "Start a new project"
   },
   {
+   "id": "template-readiness",
+   "title": "Template readiness"
+  },
+  {
    "id": "design-collection",
    "title": "Design collection"
   },
@@ -189,6 +193,10 @@ globalThis.MoorkyzSearchIndex = {
   {
    "id": "verification",
    "title": "Verification"
+  },
+  {
+   "id": "support-and-license",
+   "title": "Support and license"
   }
  ],
  "entries": [

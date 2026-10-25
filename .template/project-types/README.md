@@ -101,6 +101,41 @@ contract. Its existing Dockerfile is an unfinished starter: it still needs a
 pinned base image, non-root runtime, real start command and health check.
 It is not a deployable application and no deployment workflow is supplied.
 
+## Complete the selected presets
+
+These are the remaining project decisions, not missing template runtime code.
+Complete only the rows for types actually selected. Keep real credentials out
+of copied files, examples and Git history.
+
+| Type | Required review before product use |
+|---|---|
+| `node` | Replace `moorkyz-project`, review the Node engine and exact package-manager version, generate one lockfile and add the product's real scripts. Keep the maintenance scripts only if the corresponding tooling is retained. |
+| `web` | Replace the manifest name and icons with product branding. Set `start_url`, `scope`, theme and display behavior only for the real deployment path; test installed-browser behavior separately. |
+| `docker` | Supply a reviewed `BASE_IMAGE`, preferably digest-pinned. Define actual build/runtime stages, a non-root user, start command and health check. Review the build context and ignore rules before building; do not infer a runtime from the template. |
+| `typescript` | Install the reviewed compiler, supply actual source files and required runtime types, and adjust include paths/module settings to the application. The current preset checks types without emitting files; it does not build an application. |
+| `eslint` | Install ESLint and review the intentionally small built-in rule set. Configure actual browser/Node globals and any framework or TypeScript parser/plugins explicitly. |
+| `prettier` | Install the formatter, review the shared two-space/LF conventions and ignores, then check the intended source files before applying formatting. |
+| `stylelint` | Install both Stylelint and `stylelint-config-standard`; add processors or syntax configuration only for the actual stylesheet language. |
+| `markdownlint` | Install `markdownlint-cli` and review rules/ignores. Long-line and inline-HTML rules are disabled intentionally for the existing documentation style. |
+| `vscode` | Review extension publishers and the workspace trust model. Recommendations do not install extensions, grant tool permissions or establish account access. |
+
+The optional `moorkyz.config.example.json` illustrates two local projects and
+storage defaults. Copy and edit it only when those application directories and
+scripts exist; selecting `node` alone does not create them. Do not rename this
+example to live configuration merely to make lifecycle commands appear ready.
+
+### Preset references
+
+- [npm package manifest](https://docs.npmjs.com/cli/v11/configuring-npm/package-json/)
+- [Web app manifest](https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Manifest)
+- [Dockerfile reference](https://docs.docker.com/reference/dockerfile/)
+- [TypeScript compiler options](https://www.typescriptlang.org/tsconfig/)
+- [ESLint configuration](https://eslint.org/docs/latest/use/configure/configuration-files)
+- [Prettier configuration](https://prettier.io/docs/configuration)
+- [Stylelint configuration](https://stylelint.io/user-guide/configure/)
+- [markdownlint rules](https://github.com/DavidAnson/markdownlint/blob/main/doc/Rules.md)
+- [VS Code extension recommendations](https://code.visualstudio.com/docs/configure/extensions/extension-marketplace#_workspace-recommended-extensions)
+
 ## Shared tooling is not a product stack
 
 The [moorkyz](../../moorkyz) CLI, [maintenance checkups](../maintenance/README.md),

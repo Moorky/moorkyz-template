@@ -87,6 +87,8 @@ The existing low-disk-space safeguard can prune earlier using the same chosen or
 
 ## Verification
 
+Follow the [work steps](CONTRIBUTING.md#work-steps): **Analyzing and Reading**, **Researching and Planning**, **Developing**, then **Clean Up**. Clean Up covers tests, best-practice/redundancy and safety review, final reference/content validation, documentation updates and rechecks, audit, and a focused local commit. Self-review and passing checks do not imply human approval; record required approvals, unavailable content and remaining risks explicitly.
+
 CI runs `.template/maintenance/RunCheckups.ps1 -NoPause` with PowerShell on Linux and Windows using the pinned Node version, pinned actions and a read-only token. Checkups cover runnable syntax, no-op entrypoints, documentation links/current names, icons/CI references, `README.html` freshness and preset configuration syntax; the bundled example tests have been removed. Selector, Copilot setup and storage/audit action checks run only in newly created disposable copies, with isolated user profiles for setup, preserving existing user files and source bytes. Storage checks exercise byte/age boundaries, pruning order, archive protections, warnings and report generation. No application, live-repository setup, live storage cleanup or package script is executed. All PowerShell scripts accept `-DryRun`; the CLI accepts `--dry-run`, and the CMD selector forwards `-DryRun`. These no-op modes do not validate real action behavior; use the setup scripts' existing `-WhatIf` for input-aware previews. Regenerate `README.html` with `node moorkyz readme`.
 
 ## Support and license

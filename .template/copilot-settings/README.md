@@ -85,7 +85,11 @@ Do not put credentials into tracked project config. Enabling `chat.mcp.access` p
 point for repositories without an agent guide. Fill in its project-specific
 context with the actual architecture, verification commands and quality gates.
 It includes instruction precedence, honest evidence, secret protection and
-focused-change rules without assuming Moorkyz scripts or a scheduler.
+focused-change rules without assuming Moorkyz scripts or a scheduler. Its work
+steps are Analyzing and Reading, Researching and Planning, Developing, then
+Clean Up: tests, quality/safety review, final reference checks, documentation
+updates and rechecks, evidence/audit, and an authorized focused commit.
+Passing checks do not imply human approval.
 
 This repository uses the more detailed [root guide](../../AGENTS.md). Existing
 project guides are preserved, not replaced or merged by setup. Apply any desired

@@ -5,6 +5,11 @@ draft from [the template](../docs/AUDIT_TEMPLATE.md) with
 `node moorkyz audit "task title"`, then record scope, changed files, actual
 validation results, security review, remaining blockers and human-review status.
 A generated draft is not verification. Commit it with the task's changes.
+Follow the [work steps](../CONTRIBUTING.md#work-steps) and record all four phases.
+The Clean Up evidence includes tests, best-practice/redundancy and safety review,
+final code/link/content availability checks, documentation/generated updates and
+final-state rechecks. Distinguish self-review from independent or human approval;
+record unavailable references, missing approvals and blockers explicitly.
 
 ## Current names and locations
 

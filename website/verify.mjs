@@ -91,6 +91,12 @@ for (const view of ["all", "readme", "landing"]) {
 
 console.log(`PASS: fresh static catalog; ${designs.length} designs / ${designs.length * 2} templates; ${localLinks} local links and anchors; ${combinations} type/style combinations; no-JS controls, compact badges and Moorkyz footer.`);
 
+const catalogCss = readFileSync(new URL("./catalog.css", import.meta.url), "utf8");
+assert.match(catalogCss, /\.template-card \{[^}]*position: relative;[^}]*isolation: isolate;/);
+assert.match(catalogCss, /\.card-links \[data-kind="landing"\]::after, body\[data-view="readme"\] \.card-links \[data-kind="readme"\]::after \{[^}]*position: absolute; inset: 0; z-index: 1;/);
+assert.match(catalogCss, /body:not\(\[data-view="readme"\]\) \.card-links \[data-kind="readme"\] \{ position: relative; z-index: 2;/);
+assert.match(catalogCss, /\.card-links a:focus-visible::after \{ outline: 2px solid var\(--accent\); outline-offset: -4px;/);
+
 const viewer = readFileSync(new URL("./viewer.html", import.meta.url), "utf8");
 assert.equal(viewer, renderViewer(), "Template viewer is stale: run node website\\build.mjs");
 assert.equal([...viewer.matchAll(/class="viewer-entry"/g)].length, 40);
@@ -125,6 +131,7 @@ function element(dataset = {}, attributes = {}) {
     set src(value) { attributes.src = value; },
     scrollIntoView() {},
     focus() { this.focused = true; },
+    click() { this.events.get("click")({ button: 0, preventDefault() {} }); },
   };
 }
 const items = designs.flatMap((design) => ["landing", "readme"].map((kind) => element({
@@ -141,6 +148,8 @@ const summary = element();
 typeFilter.querySelector = (value) => { assert.equal(value, "summary"); return summary; };
 const radios = ["all", "landing", "readme"].map((value) => Object.assign(element(), { value }));
 const frame = element();
+const initialFrameEvents = new Map();
+frame.contentDocument = { addEventListener(name, handler) { initialFrameEvents.set(name, handler); } };
 const heading = element();
 const fullView = element();
 const error = element();
@@ -181,9 +190,17 @@ function click(item, extras = {}) {
   item.events.get("click")({ button: 0, preventDefault() { prevented = true; }, ...extras });
   return prevented;
 }
+function press(key, extras = {}, listener = events.get("keydown")) {
+  let prevented = false;
+  listener({ key, target: { closest() { return null; } }, preventDefault() { prevented = true; }, ...extras });
+  return prevented;
+}
 assert.equal(viewerControls.hidden, false);
 assert.equal(frame.src, items[0].dataset.src);
 assert.equal(entryCount.textContent, "40 entries");
+assert.ok(press("ArrowRight", {}, initialFrameEvents.get("keydown")));
+assert.equal(frame.src, items[1].dataset.src, "An already-loaded preview also receives keyboard navigation.");
+assert.ok(press("ArrowLeft", {}, initialFrameEvents.get("keydown")));
 for (const item of items) {
   assert.ok(click(item));
   assert.equal(frame.src, item.dataset.src);
@@ -196,7 +213,34 @@ click(next);
 assert.equal(frame.src, items[0].dataset.src, "Next wraps to the beginning.");
 click(previous);
 assert.equal(frame.src, items.at(-1).dataset.src, "Previous wraps to the end.");
+assert.ok(press("ArrowRight"));
+assert.equal(frame.src, items[0].dataset.src, "Right Arrow wraps to the beginning.");
+assert.ok(press("ArrowLeft"));
+assert.equal(frame.src, items.at(-1).dataset.src, "Left Arrow wraps to the end.");
 const before = frame.src;
+for (const extras of [
+  { ctrlKey: true }, { metaKey: true }, { shiftKey: true }, { altKey: true },
+  { defaultPrevented: true }, { isComposing: true },
+  ...["input", "textarea", "select", "[contenteditable]", "[role=textbox]", "[role=combobox]", "[role=slider]"].map((tag) => ({
+    target: { closest(query) { assert.ok(query.includes(tag)); return {}; } },
+  })),
+]) {
+  assert.equal(press("ArrowRight", extras), false, "Editing, handled keys and modified shortcuts must not navigate.");
+  assert.equal(frame.src, before);
+}
+assert.equal(press("ArrowUp"), false, "Vertical arrows retain scrolling behavior.");
+const frameEvents = new Map();
+frame.contentDocument = { addEventListener(name, handler) { frameEvents.set(name, handler); } };
+frame.events.get("load")();
+assert.ok(press("ArrowRight", {}, frameEvents.get("keydown")));
+assert.equal(frame.src, items[0].dataset.src, "Arrow keys also work in the focused preview.");
+const reloadedFrameEvents = new Map();
+frame.contentDocument = { addEventListener(name, handler) { reloadedFrameEvents.set(name, handler); } };
+frame.events.get("load")();
+assert.ok(press("ArrowLeft", {}, reloadedFrameEvents.get("keydown")));
+assert.equal(frame.src, before, "Keyboard navigation is attached again after the preview reloads.");
+frame.contentDocument = null;
+assert.doesNotThrow(() => frame.events.get("load")(), "Unavailable external iframe documents are not accessed.");
 assert.equal(click(items[0], { ctrlKey: true }), false, "Modified clicks keep native link behavior.");
 assert.equal(frame.src, before);
 for (const radio of radios) {
@@ -206,6 +250,11 @@ for (const radio of radios) {
 selector.value = designs[1].id;
 selector.events.get("change")();
 assert.equal(entryCount.textContent, "1 entry");
+assert.ok(press("ArrowRight"), "Navigate into the only filtered result from a different selection.");
+assert.equal(frame.src, items[3].dataset.src);
+assert.equal(press("ArrowRight"), false, "A single selected result cannot navigate.");
+assert.equal(press("ArrowLeft"), false);
+click(items.at(-1));
 search.value = "no-such-template";
 search.events.get("input")();
 assert.equal(entryCount.textContent, "0 entries");
@@ -213,9 +262,13 @@ assert.equal(empty.hidden, false);
 assert.equal(next.hasAttribute("href"), false);
 assert.equal(previous.getAttribute("aria-disabled"), "true");
 assert.equal(frame.src, before, "Filtering must not replace the selected preview.");
+assert.equal(press("ArrowRight"), false, "Empty results cannot navigate with the keyboard.");
+assert.equal(press("ArrowLeft"), false);
 media.matches = true;
 media.events.get("change")();
 assert.equal(entryCount.textContent, "40 entries", "Mobile browses the whole collection.");
+assert.ok(press("ArrowRight"));
+assert.equal(frame.src, items[0].dataset.src, "Mobile keys browse all entries despite desktop filters.");
 media.matches = false;
 media.events.get("change")();
 assert.equal(entryCount.textContent, "0 entries", "Desktop filters survive resizing.");
@@ -241,3 +294,4 @@ click(items[2]);
 assert.equal(error.hidden, true, "Selecting a known entry recovers from a bad URL.");
 assert.equal(frame.src, items[2].dataset.src);
 console.log("PASS: fresh viewer; 40 selections and Full View destinations; previous/next wrap, URL/history, combined filters, empty states, mobile resize, normalized search, modified clicks and four invalid-link refusals.");
+console.log("PASS: Left/Right navigation and wrapping in viewer and reloaded iframe; editable/modified/handled/composing keys excluded; single/empty filtered results and mobile keyboard navigation.");

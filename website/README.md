@@ -21,6 +21,10 @@ only the local template pages.
 ## Opening a template
 
 With JavaScript enabled, catalog links open the [template viewer](viewer.html).
+The entire card opens the landing page in **All designs** and **Landing** views,
+or the README edition in **README** view. The separate README and Landing links
+still open their respective page types. These are native links, including
+keyboard activation, modified clicks and direct-page fallback without JavaScript.
 The desktop view has two full-height panels: a 300 px sidebar and the remaining
 space for a live iframe. The sidebar contains search, a template selector, an
 icon that opens the page-type filter (all, landing pages or README editions),
@@ -32,6 +36,13 @@ wrapping at either end. Desktop arrows browse the filtered entries instead.
 Changing the viewport does not discard desktop filter choices. **Full View** in
 the top-right opens the selected template directly in a new tab, without the
 viewer.
+
+**Left Arrow** and **Right Arrow** perform the same previous/next navigation as
+the arrow buttons, including wrapping and desktop filters. They also work while
+the local template preview has focus. Search fields, selectors, editable content
+and modified shortcuts keep their normal keyboard behavior. Preview keyboard
+navigation requires the embedded page to remain same-origin with the viewer;
+it is not attached to external pages opened inside the iframe.
 
 Selections update the URL (`viewer.html?template=02-paper&kind=readme`), so links,
 reload and browser Back/Forward restore the selected template. Only generated
@@ -47,7 +58,8 @@ directly; the viewer explains that its interactive controls need JavaScript.
   separate design showcase or template pages.
 - [catalog.css](catalog.css) owns the responsive layout and schematic template
   illustrations. These are illustrative previews, not screenshots; card links
-  open the interactive viewer, with direct-template fallbacks without JavaScript.
+  stretch over the entire card and open the interactive viewer, with direct-template
+  fallbacks without JavaScript.
 - [catalog.js](catalog.js) progressively enables type/style controls and updates
   their pressed states, live result count and footer year. It uses no network or
   persistence APIs.
@@ -57,7 +69,9 @@ directly; the viewer explains that its interactive controls need JavaScript.
   existing local predictive-search helper; no extra dependency is installed.
 - [verify.mjs](verify.mjs) checks generated freshness, complete catalog coverage,
   local links and anchors, compact badges, legal-link exclusion and the control
-  state combinations.
+  state combinations, plus viewer keyboard navigation and editable-field guards.
+  Browser checks should also cover full-card hit areas, independent page-type
+  links, no-JavaScript navigation and arrow keys after focusing the iframe.
 
 From the repository root:
 

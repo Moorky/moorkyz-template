@@ -87,6 +87,17 @@
     event.preventDefault();
     if (entry) select(entry, true);
   }
+  function handleArrowKey(event) {
+    if (event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    if (event.target.closest?.("input, textarea, select, [contenteditable], [role=textbox], [role=combobox], [role=slider]")) return;
+    const link = event.key === "ArrowLeft" ? previous : event.key === "ArrowRight" ? next : null;
+    if (!link?.hasAttribute("href")) return;
+    event.preventDefault();
+    link.click();
+  }
+  function bindPreviewKeys() {
+    frame.contentDocument?.addEventListener("keydown", handleArrowKey);
+  }
   for (const entry of entries) entry.addEventListener("click", (event) => navigate(event, entry));
   for (const link of [previous, next]) link.addEventListener("click", (event) => {
     const entry = link.hasAttribute("href") ? entries.find((item) => new URL(item.dataset.url, location.href).href === link.href) : null;
@@ -112,6 +123,9 @@
     updateList();
   });
   window.addEventListener("popstate", readLocation);
+  window.addEventListener("keydown", handleArrowKey);
+  frame.addEventListener("load", bindPreviewKeys);
+  bindPreviewKeys();
   document.querySelector(".viewer-controls").hidden = false;
   updateList();
   readLocation();

@@ -93,7 +93,7 @@ h2 > span { color: #92b9e8; }
 .collection-caption p:last-child { color: #a0aec2; }
 .collection-caption span { padding-left: 15px; }
 .template-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 25px; }
-.template-card { overflow: hidden; background: var(--panel); border: 1px solid var(--line); border-radius: 9px; transition: border-color 160ms, transform 160ms; }
+.template-card { position: relative; isolation: isolate; overflow: hidden; background: var(--panel); border: 1px solid var(--line); border-radius: 9px; transition: border-color 160ms, transform 160ms; }
 .template-card:hover, .template-card:focus-within { border-color: #647994; transform: translateY(-3px); }
 .template-preview { color: var(--ink); background: var(--paper); height: 230px; overflow: hidden; border-bottom: 1px solid var(--line); position: relative; }
 .template-preview .preview-bar { height: 27px; font-size: 7px; border-color: color-mix(in srgb, var(--ink) 25%, transparent); }
@@ -141,6 +141,9 @@ h2 > span { color: #92b9e8; }
 .card-links a + a { border-left: 1px solid var(--line); margin-left: 17px; padding-left: 17px; }
 .card-links a span { color: #91a1bb; font-size: 15px; }
 .card-links a:hover { color: var(--accent); }
+.card-links [data-kind="landing"]::after, body[data-view="readme"] .card-links [data-kind="readme"]::after { content: ""; position: absolute; inset: 0; z-index: 1; border-radius: 8px; }
+body:not([data-view="readme"]) .card-links [data-kind="readme"] { position: relative; z-index: 2; }
+.card-links a:focus-visible::after { outline: 2px solid var(--accent); outline-offset: -4px; }
 body[data-view="readme"] .preview-landing, body[data-view="readme"] [data-kind="landing"], body[data-view="landing"] [data-kind="readme"] { display: none; }
 body[data-view="readme"] .preview-readme { display: flex; }
 body[data-view="landing"] .card-links a { border-left: 0; margin-left: 0; padding-left: 0; }

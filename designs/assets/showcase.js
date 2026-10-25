@@ -4,22 +4,50 @@ const search = document.querySelector("#design-search");
 const count = document.querySelector("#result-count");
 const empty = document.querySelector(".empty-state");
 const filterButtons = [...document.querySelectorAll("[data-filter]")];
+const predictive = window.MoorkyzPredictiveSearch;
+const fold = predictive ? predictive.normalize : (value) => value.trim().toLowerCase();
 let category = "All";
 let kind = "landing";
 let previewCard = null;
 const dialog = document.querySelector("#preview-dialog");
 const frame = document.querySelector("#preview-frame");
 let trigger = null;
+const pageLinks = (card) => [...card.querySelectorAll("[data-page-link]")];
+const haystacks = new Map(cards.map((card) => [card, fold([card.dataset.name, card.dataset.tone, ...pageLinks(card).map((link) => link.getAttribute("href"))].join(" "))]));
 
 function filter() {
-  const query = search.value.trim().toLowerCase();
+  const query = fold(search.value);
   let visible = 0;
   for (const card of cards) {
-    card.hidden = !((category === "All" || card.dataset.category === category) && card.dataset.name.includes(query));
+    card.hidden = !((category === "All" || card.dataset.category === category) && haystacks.get(card).includes(query));
     if (!card.hidden) visible++;
   }
   count.textContent = `${visible} direction${visible === 1 ? "" : "s"} / ${visible * 2} pages`;
   empty.hidden = visible !== 0;
+  return visible;
+}
+function suggestionEntries() {
+  const entries = [];
+  for (const card of cards) {
+    const contexts = [card.dataset.category, card.dataset.tone];
+    entries.push({ value: card.querySelector("h3").textContent.trim(), kind: "Design", weight: 40, contexts });
+    for (const phrase of card.querySelector(".card-info p").textContent.split("/")) entries.push({ value: phrase.trim(), kind: "Character", weight: 20, contexts });
+    entries.push({ value: card.dataset.category, kind: "Style", weight: 30, contexts });
+    entries.push({ value: card.dataset.tone === "dark" ? "Dark" : "Light", kind: "Tone", weight: 10, contexts });
+    if (card.dataset.name.includes("compact documentation")) entries.push({ value: "Compact documentation", kind: "Edition", weight: 15, contexts: [...contexts, "readme"] });
+    for (const link of pageLinks(card)) entries.push({ value: link.getAttribute("href"), kind: "File", weight: -40, contexts: [...contexts, link.dataset.pageLink] });
+  }
+  return entries;
+}
+const predictor = predictive?.createPredictor({ entries: suggestionEntries(), limit: 6 });
+if (predictor) {
+  predictive.attach(search, predictor, {
+    label: "Design suggestions",
+    context: () => [category === "All" ? "" : category, kind],
+    onCommit: (value) => {
+      if (filter() > 0) predictor.record(value);
+    },
+  });
 }
 for (const button of filterButtons) {
   button.addEventListener("click", () => {
@@ -53,6 +81,7 @@ for (const button of document.querySelectorAll("[data-preview]")) {
   button.addEventListener("click", () => {
     trigger = button;
     previewCard = button.closest(".collection-card");
+    predictor?.record(previewCard.querySelector("h3").textContent.trim());
     updatePreview();
     dialog.showModal();
   });

@@ -68,7 +68,26 @@ be the project root. Use `docs --help` for the command summary.
 ## Browse and use
 
 - Search by name or descriptive terms; filter Quiet, Cosmic, Chromatic,
-  Editorial or Systematic.
+  Editorial or Systematic. Matching ignores case, accents and punctuation and
+  also covers page filenames such as `01-aether/landing.html`.
+- Predictive autocomplete suggests design names, character phrases, styles,
+  tones and page files while you type. A matching prefix appears as subtle
+  inline ghost text (`mid` + `night blue`); typos, missing letters, phrases and
+  abbreviations appear as `typed → Suggestion`, with alternatives in a compact
+  list. `Tab` or `ArrowRight` (caret at the end) accepts the inline suggestion,
+  `ArrowDown`/`ArrowUp` browse alternatives, `Enter` confirms the highlighted
+  one and `Escape` dismisses. The typed text is never replaced without one of
+  these explicit actions or a click on a suggestion.
+- Ranking runs locally in [predictive-search.js](assets/predictive-search.js):
+  exact and prefix matches, normalized matching, weighted edit distance with
+  keyboard-adjacency, transposition and missing-letter costs, acronyms and
+  abbreviations (`KLSE` → `Karlsruhe` when that value is in the dictionary),
+  then context and recency. The active style filter and page-type switch act as
+  workspace context; accepted, confirmed and previewed values become recent
+  values for the current page session only (no storage, network or tracking).
+  Results are cached; dictionaries above 1,500 entries show immediate prefix
+  suggestions and debounce the fuzzy pass. An optional `remote(query, { signal })`
+  provider can add semantic suggestions after local ones; none is configured.
 - Each direction contains `README.html` and `landing.html`. Both open directly.
   The showcase offers a live preview, README/landing tabs, Wide/Mobile viewport
   controls and a direct-page link. Escape closes the preview.
@@ -149,6 +168,10 @@ files in each of the five compact themes (100 real outputs), entirely in
 disposable directories. They check source preservation, nested links/anchors,
 standalone styling, unchanged reruns, check/dry-run modes and refusal of unsafe
 inputs or conflicting outputs.
+Its [predictive-search regressions](verify-predictive-search.mjs) cover the
+`KLSE` → `Karlsruhe` acceptance case, typo/accent/phrase/alias handling,
+context and recency ranking, caching and a 5,001-entry responsiveness budget.
+Browser keyboard, focus and layout behavior still needs browser checks.
 
 ## Reference study
 

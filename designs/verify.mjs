@@ -7,6 +7,7 @@ import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { designs, documentationThemes } from "./catalog.mjs";
 import { verifyDocumentation } from "./verify-documentation.mjs";
+import { verifyPredictiveSearch } from "./verify-predictive-search.mjs";
 
 const directory = path.dirname(fileURLToPath(import.meta.url));
 const root = path.dirname(directory);
@@ -131,7 +132,7 @@ for (const name of ["designs.css", "showcase.css", "documentation.css"]) {
   assert.match(source, /@media\(max-width:760px\)/);
 }
 assert.match(css, /prefers-reduced-motion:reduce/);
-for (const name of ["interactions.js", "showcase.js"]) {
+for (const name of ["interactions.js", "predictive-search.js", "showcase.js"]) {
   const filename = path.join(directory, "assets", name);
   const source = fs.readFileSync(filename, "utf8");
   assert.doesNotMatch(source, /\bfetch\s*\(|XMLHttpRequest|localStorage|sessionStorage|innerHTML|eval\s*\(/);
@@ -148,8 +149,12 @@ for (const copy of [
 ]) assert.doesNotMatch(copy, /<br>(?=\S)/, "Responsive line breaks need whitespace when hidden.");
 assert.match(showcase, /20<span> \/<\/span>/);
 assert.match(showcase, /40<span> \+ 1<\/span>/);
+assert.match(showcase, /<script src="assets\/predictive-search\.js" defer><\/script><script src="assets\/showcase\.js" defer>/, "Load the predictor before the showcase.");
+assert.match(showcase, /<label for="design-search">[^<]+<\/label><input id="design-search" type="search"/, "Keep the search field explicitly labelled.");
+assert.match(fs.readFileSync(path.join(directory, "assets", "showcase.css"), "utf8"), /\.search-label\{[^}]*max-width:66\.67%/, "Search bar width stays within 66.67% of its container.");
 assert.equal(fs.readdirSync(path.join(root, ".template", "project-types", "helpers", "types"), { withFileTypes: true }).filter((entry) => entry.isDirectory()).length, 9);
 console.log(`PASS: exactly 20 unique README editions, 20 unique landings and one showcase; ${links} local links/assets checked.`);
 console.log(`PASS: ${chapterTitles.length} complete chapters per README, semantic landmarks, all 100 palette contrast pairs >= 4.5:1.`);
 console.log("PASS: generated freshness, reduced-motion/mobile styles, local-only assets and dependency-free script syntax.");
 verifyDocumentation();
+verifyPredictiveSearch();

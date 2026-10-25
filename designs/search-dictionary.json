@@ -1,0 +1,18 @@
+{
+  "about": "Workspace vocabulary for the design-collection search. Suggested locally only. Optional href values are relative to designs/ and must exist; the build fails otherwise. Edit or remove entries for an adopted project.",
+  "entries": [
+    { "value": "Moorkyz Template", "kind": "Project", "weight": 45, "aliases": ["moorkyz-template"], "href": "../README.md" },
+    { "value": "Karlsruhe", "kind": "Location", "weight": 30, "aliases": ["KA"] },
+    { "value": "Agent guide", "kind": "Document", "weight": 20, "aliases": ["AGENTS.md"], "href": "../AGENTS.md" },
+    { "value": "Agent scheduler", "kind": "Document", "weight": 15, "aliases": ["AGENT_SCHEDULER.md"], "href": "../AGENT_SCHEDULER.md" },
+    { "value": "Infrastructure", "kind": "Document", "weight": 15, "aliases": ["INFRASTRUCTURE.md"], "href": "../docs/INFRASTRUCTURE.md" },
+    { "value": "Template tools", "kind": "Tool", "weight": 25, "href": "../.template/README.md" },
+    { "value": "Maintenance checkups", "kind": "Tool", "weight": 25, "aliases": ["RunCheckups"], "href": "../.template/maintenance/README.md" },
+    { "value": "Project types", "kind": "Tool", "weight": 25, "aliases": ["SetProjectType", "Presets"], "href": "../.template/project-types/README.md" },
+    { "value": "Claim template", "kind": "Tool", "weight": 20, "aliases": ["CreateProject"], "href": "../.template/claim-template/README.md" },
+    { "value": "Copilot settings", "kind": "Tool", "weight": 20, "href": "../.template/copilot-settings/README.md" },
+    { "value": "Soft copy", "kind": "Tool", "weight": 20, "aliases": ["CopyTemplate"], "href": "../.template/soft-copy/README.md" },
+    { "value": "Landing pages", "kind": "Setting", "weight": 10, "href": "index.html?view=landing#collection" },
+    { "value": "README editions", "kind": "Setting", "weight": 10, "href": "index.html?view=readme#collection" }
+  ]
+}

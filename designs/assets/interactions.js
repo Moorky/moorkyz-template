@@ -1,7 +1,7 @@
 "use strict";
 document.documentElement.classList.add("has-js");
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && window.parent !== window) {
+  if (event.key === "Escape" && !event.defaultPrevented && window.parent !== window) {
     window.parent.postMessage("moorkyz:close-preview", "*");
   }
 });

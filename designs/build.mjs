@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { designs, documentationThemes } from "./catalog.mjs";
 import { renderDocumentation, exportDocuments } from "./documentation.mjs";
+import { searchBox, searchHead, searchIndex } from "./search.mjs";
 
 const directory = path.dirname(fileURLToPath(import.meta.url));
 const root = path.dirname(directory);
@@ -18,7 +19,7 @@ if (args.some((arg) => !["--check", "--dry-run"].includes(arg))) {
   throw new Error("Usage: node designs/build.mjs [--check | --dry-run]");
 }
 if (args.includes("--dry-run")) {
-  console.log("Dry run: would generate 20 README editions, 20 landing pages and the showcase. No files read or written.");
+  console.log("Dry run: would generate 20 README editions, 20 landing pages, the showcase and the search index. No files read or written.");
   process.exit(0);
 }
 
@@ -70,7 +71,7 @@ function artwork(d, miniature = false) {
 }
 
 function header(d, kind) {
-  return `<header class="site-header"><a class="brand" href="../index.html">${marker}<span>Moorkyz<span class="brand-sub"> / ${escape(d.name)}</span></span></a><nav aria-label="Page navigation"><a href="${kind === "readme" ? "landing.html" : "README.html"}">${kind === "readme" ? "Landing page" : "Read the docs"}</a><a href="../index.html#collection">All designs ${arrow}</a></nav><button class="light-toggle js-only" type="button" aria-pressed="true">Ambient light <span>on</span></button></header>`;
+  return `<header class="site-header"><a class="brand" href="../index.html">${marker}<span>Moorkyz<span class="brand-sub"> / ${escape(d.name)}</span></span></a>${searchBox({ root: "../", kind, design: d.id })}<nav aria-label="Page navigation"><a href="${kind === "readme" ? "landing.html" : "README.html"}">${kind === "readme" ? "Landing page" : "Read the docs"}</a><a href="../index.html#collection">All designs ${arrow}</a></nav><button class="light-toggle js-only" type="button" aria-pressed="true">Ambient light <span>on</span></button></header>`;
 }
 function footer(d, kind) {
   const index = designs.indexOf(d);
@@ -81,7 +82,7 @@ function footer(d, kind) {
 }
 function document(d, kind, content) {
   return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="${escape(kind === "readme" ? `The complete Moorkyz Template README, in the ${d.name} design.` : d.description)}"><meta name="color-scheme" content="${d.tone}"><title>${escape(d.name)} / ${kind === "readme" ? "README" : "Moorkyz Template"}</title><link rel="stylesheet" href="../assets/designs.css"><script src="../assets/interactions.js" defer></script></head>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="${escape(kind === "readme" ? `The complete Moorkyz Template README, in the ${d.name} design.` : d.description)}"><meta name="color-scheme" content="${d.tone}"><title>${escape(d.name)} / ${kind === "readme" ? "README" : "Moorkyz Template"}</title><link rel="stylesheet" href="../assets/designs.css"><script src="../assets/interactions.js" defer></script>${searchHead("../")}</head>
 <body class="edition ${d.id.slice(3)} ${kind}" data-design="${d.id}" data-kind="${kind}" style="${variables(d)}"><a class="skip-link" href="#main">Skip to content</a>${header(d, kind)}${content}${footer(d, kind)}</body></html>\n`;
 }
 function actions() {
@@ -105,7 +106,7 @@ function readmeEdition(d) {
   if (documentationThemes.includes(d.art)) {
     const index = designs.indexOf(d);
     return renderDocumentation({
-      markdown: readme, theme: d.art, sourceName: "README.md", collectionId: d.id, scriptHref: "../assets/interactions.js",
+      markdown: readme, theme: d.art, sourceName: "README.md", collectionId: d.id, scriptHref: "../assets/interactions.js", searchRoot: "../",
       rewriteHref: (href) => /^(?:[a-z][a-z0-9+.-]*:|#|\/)/i.test(href) ? href : rootLink + href,
       links: [{ label: "All designs", href: "../index.html#collection" }, { label: "Landing page", href: "landing.html" }, { label: "Markdown", href: "../../README.md" }],
       adjacent: [{ label: "Previous", href: `../${designs[(index + 19) % 20].id}/README.html` }, { label: "Next", href: `../${designs[(index + 1) % 20].id}/README.html` }],
@@ -118,11 +119,11 @@ function readmeEdition(d) {
 function showcase() {
   const cards = designs.map((d) => `<article class="collection-card" data-category="${d.category}" data-tone="${d.tone}" data-name="${escape(`${d.name} ${d.note} ${d.category}${documentationThemes.includes(d.art) ? " compact documentation docs" : ""}`.toLowerCase())}"><div class="card-visual edition ${d.id.slice(3)}" style="${variables(d)}"><span class="card-index">${d.id.slice(0, 2)} / 20</span>${artwork(d, true)}<div class="mini-title">${d.title}</div><span class="preview-chip">${escape(d.category)} &middot; ${d.tone === "dark" ? "Dark" : "Light"}</span></div><div class="card-info"><div><h3>${escape(d.name)}</h3><p>${escape(d.note)}</p></div><button class="preview-button js-only" type="button" data-preview="${d.id}" aria-label="Preview ${escape(d.name)}">Preview ${arrow}</button></div><div class="card-links"><a href="${d.id}/landing.html" data-page-link="landing">Landing page ${arrow}</a><a href="${d.id}/README.html" data-page-link="readme">${documentationThemes.includes(d.art) ? "Docs README" : "README"} ${arrow}</a></div></article>`).join("\n");
   return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="Twenty original design directions. Twenty README editions. Twenty landing pages. One open, stack-neutral Moorkyz template."><meta name="color-scheme" content="dark"><title>Moorkyz Template / Freedom, by design.</title><link rel="stylesheet" href="assets/designs.css"><link rel="stylesheet" href="assets/showcase.css"><script src="assets/interactions.js" defer></script><script src="assets/predictive-search.js" defer></script><script src="assets/showcase.js" defer></script></head><body class="showcase"><a class="skip-link" href="#main">Skip to content</a>
-<header class="showcase-header"><a class="brand" href="./index.html">${marker}<span>Moorkyz<span class="brand-sub"> / Templates</span></span></a><nav aria-label="Main navigation"><a href="#collection">Collection</a><a href="#foundation">The foundation</a><a href="./README.md">A little guidance ${arrow}</a></nav><a class="header-cta" href="https://github.com/Moorky/moorkyz-template">Make it yours ${arrow}</a></header>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="Twenty original design directions. Twenty README editions. Twenty landing pages. One open, stack-neutral Moorkyz template."><meta name="color-scheme" content="dark"><title>Moorkyz Template / Freedom, by design.</title><link rel="stylesheet" href="assets/designs.css"><link rel="stylesheet" href="assets/showcase.css"><script src="assets/interactions.js" defer></script>${searchHead("")}<script src="assets/showcase.js" defer></script></head><body class="showcase"><a class="skip-link" href="#main">Skip to content</a>
+<header class="showcase-header"><a class="brand" href="./index.html">${marker}<span>Moorkyz<span class="brand-sub"> / Templates</span></span></a>${searchBox({ root: "", kind: "showcase" })}<nav aria-label="Main navigation"><a href="#collection">Collection</a><a href="#foundation">The foundation</a><a href="./README.md">A little guidance ${arrow}</a></nav><a class="header-cta" href="https://github.com/Moorky/moorkyz-template">Make it yours ${arrow}</a></header>
 <main id="main"><section class="showcase-hero"><div class="hero-copy"><p class="eyebrow"><span class="status-dot"></span>AN OPEN FOUNDATION / TWENTY PERSPECTIVES</p><h1>Freedom,<br><em>by design</em><span class="title-dot" aria-hidden="true">.</span></h1><p class="showcase-description">A little structure. A lot of possibility.<br> Twenty considered ways to begin something<br> that could only come from you.</p><div class="actions"><a class="button primary" href="#collection">Find your direction <span aria-hidden="true">&#8595;</span></a><a class="text-link" href="../README.html">Explore the template ${arrow}</a></div><p class="hero-footnote">Original designs. Real documentation. No framework required.</p></div><div class="showcase-sculpture" data-light aria-hidden="true"><span class="sculpture-halo"></span><span class="sculpture-plane plane-one"></span><span class="sculpture-plane plane-two"></span><span class="sculpture-plane plane-three"></span><span class="sculpture-core"></span><span class="sculpture-orbit"></span><span class="sculpture-caption">COMPLEXITY, MADE SIMPLE.</span><span class="sculpture-coordinate">X: POSSIBILITY<br>Y: PRECISION</span></div><div class="hero-bottom"><span>VOL. 01 / THE FOUNDATION COLLECTION</span><span>BUILT FOR THE SPACE BETWEEN IDEA &amp; REALITY</span></div></section>
 <section class="collection-stats" aria-label="What is included"><div><strong>20<span> /</span></strong><p>README editions</p></div><div><strong>20<span> /</span></strong><p>Landing pages</p></div><div><strong>40<span> + 1</span></strong><p>Pages, plus this showcase</p></div><div><strong>0<span> /</span></strong><p>Third-party runtime dependencies</p></div></section>
-<section class="collection-section" id="collection"><div class="collection-heading"><div><p class="eyebrow">THE COLLECTION / 01&mdash;20</p><h2>One foundation.<br><em>Twenty points of view.</em></h2></div><p>Some whisper. Some glow.<br> All turn complexity into clarity.<br> Choose a direction, then make it your own.</p></div><div class="collection-controls js-only"><div class="filter-group" role="group" aria-label="Filter design style">${["All", "Quiet", "Cosmic", "Chromatic", "Editorial", "Systematic"].map((name) => `<button type="button" data-filter="${name}" aria-pressed="${name === "All"}">${name}</button>`).join("")}</div><div class="search-label"><label for="design-search">Find a design</label><input id="design-search" type="search" placeholder="Name, color or feeling..." autocomplete="off"></div></div><div class="collection-meta"><p id="result-count" role="status" aria-live="polite">20 directions / 40 pages</p><div class="view-switch js-only" role="group" aria-label="Prioritize page type"><button type="button" data-kind="landing" aria-pressed="true">Landing pages</button><button type="button" data-kind="readme" aria-pressed="false">README editions</button></div></div><div class="collection-grid">${cards}</div><p class="empty-state" hidden>No designs match this combination. Try another name or choose All.</p></section>
+<section class="collection-section" id="collection"><div class="collection-heading"><div><p class="eyebrow">THE COLLECTION / 01&mdash;20</p><h2>One foundation.<br><em>Twenty points of view.</em></h2></div><p>Some whisper. Some glow.<br> All turn complexity into clarity.<br> Choose a direction, then make it your own.</p></div><div class="collection-controls js-only"><div class="filter-group" role="group" aria-label="Filter design style">${["All", "Quiet", "Cosmic", "Chromatic", "Editorial", "Systematic"].map((name) => `<button type="button" data-filter="${name}" aria-pressed="${name === "All"}">${name}</button>`).join("")}</div></div><div class="collection-meta"><p id="result-count" role="status" aria-live="polite">20 directions / 40 pages</p><div class="view-switch js-only" role="group" aria-label="Prioritize page type"><button type="button" data-kind="landing" aria-pressed="true">Landing pages</button><button type="button" data-kind="readme" aria-pressed="false">README editions</button></div></div><div class="collection-grid">${cards}</div><p class="empty-state" hidden>No designs match this combination. Try another name or choose All.</p></section>
 <section class="showcase-foundation" id="foundation"><div><p class="eyebrow">BEAUTY IS ONLY THE BEGINNING</p><h2>Under every surface,<br><em>a thoughtful system.</em></h2><p>The visual direction is yours. The foundation is shared: a reusable repository baseline, clear boundaries, and practical tools without an invented product runtime.</p><a class="text-link" href="../README.html">Get to know the baseline ${arrow}</a></div><div class="foundation-list"><a href="../.template/project-types/README.md"><span>01 / CHOICE</span><h3>Nine opt-in presets.</h3><p>Choose a stack only when you know what you are building.</p>${arrow}</a><a href="../docs/INFRASTRUCTURE.md"><span>02 / CONTROL</span><h3>A portable root CLI.</h3><p>Documentation, audits and recoverable local storage.</p>${arrow}</a><a href="../.template/maintenance/README.md"><span>03 / CLARITY</span><h3>Checks, not guesswork.</h3><p>Explicit outcomes, safe previews and disposable regressions.</p>${arrow}</a></div></section>
 <section class="closing-section"><p class="eyebrow">A BEGINNING, NOT A BOX</p><h2>Keep the foundation.<br><em>Change everything else.</em></h2><p>Copy the template. Read the guide. Make something with a point of view.</p><div class="actions"><a class="button primary" href="https://github.com/Moorky/moorkyz-template">Start with Moorkyz ${arrow}</a><a class="text-link" href="./README.md">How to use this collection ${arrow}</a></div><span class="closing-orbit" aria-hidden="true"></span></section></main>
 <footer class="showcase-footer"><a class="brand" href="#main">${marker}<span>Moorkyz / Template collection</span></a><span>Freedom in the outcome. Precision in the foundation.</span><a href="../LICENSE">MIT licensed ${arrow}</a></footer>
@@ -132,7 +133,7 @@ function showcase() {
 if (designs.length !== 20 || new Set(designs.map((d) => d.id)).size !== 20) {
   throw new Error("The collection must contain exactly twenty unique design directions.");
 }
-const files = new Map([["index.html", showcase()]]);
+const files = new Map([["index.html", showcase()], ["assets/search-index.js", searchIndex({ directory, root, designs, documentationThemes, chapters })]]);
 for (const d of designs) {
   files.set(`${d.id}/README.html`, readmeEdition(d));
   files.set(`${d.id}/landing.html`, landing(d));
@@ -151,4 +152,4 @@ for (const [relative, content] of files) {
   }
 }
 if (stale) throw new Error(`${stale} generated page(s) are stale. Run node designs/build.mjs.`);
-console.log(`${args.includes("--check") ? "Verified" : "Generated"} 20 README editions, 20 landing pages and 1 showcase.`);
+console.log(`${args.includes("--check") ? "Verified" : "Generated"} 20 README editions, 20 landing pages, 1 showcase and the shared search index.`);

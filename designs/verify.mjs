@@ -126,13 +126,13 @@ for (const filename of pages) {
     links++;
   }
 }
-for (const name of ["designs.css", "showcase.css", "documentation.css"]) {
+for (const name of ["designs.css", "showcase.css", "documentation.css", "search.css"]) {
   const source = fs.readFileSync(path.join(directory, "assets", name), "utf8");
   assert.doesNotMatch(source, /@import|url\(/, "Styles must not fetch external assets.");
   assert.match(source, /@media\(max-width:760px\)/);
 }
 assert.match(css, /prefers-reduced-motion:reduce/);
-for (const name of ["interactions.js", "predictive-search.js", "showcase.js"]) {
+for (const name of ["interactions.js", "predictive-search.js", "search-index.js", "site-search.js", "showcase.js"]) {
   const filename = path.join(directory, "assets", name);
   const source = fs.readFileSync(filename, "utf8");
   assert.doesNotMatch(source, /\bfetch\s*\(|XMLHttpRequest|localStorage|sessionStorage|innerHTML|eval\s*\(/);
@@ -149,12 +149,26 @@ for (const copy of [
 ]) assert.doesNotMatch(copy, /<br>(?=\S)/, "Responsive line breaks need whitespace when hidden.");
 assert.match(showcase, /20<span> \/<\/span>/);
 assert.match(showcase, /40<span> \+ 1<\/span>/);
-assert.match(showcase, /<script src="assets\/predictive-search\.js" defer><\/script><script src="assets\/showcase\.js" defer>/, "Load the predictor before the showcase.");
-assert.match(showcase, /<label for="design-search">[^<]+<\/label><input id="design-search" type="search"/, "Keep the search field explicitly labelled.");
-assert.match(fs.readFileSync(path.join(directory, "assets", "showcase.css"), "utf8"), /\.search-label\{[^}]*max-width:66\.67%/, "Search bar width stays within 66.67% of its container.");
+assert.match(showcase, /<script src="assets\/predictive-search\.js" defer><\/script><script src="assets\/search-index\.js" defer><\/script><script src="assets\/site-search\.js" defer><\/script><script src="assets\/showcase\.js" defer>/, "Load the predictor, index and shared search before the showcase.");
+assert.doesNotMatch(showcase, /design-search|class="search-label"/, "The showcase uses the shared header search, not a second search field.");
+for (const filename of pages) {
+  const html = fs.readFileSync(filename, "utf8");
+  const root = filename === path.join(directory, "index.html") ? "" : "../";
+  const name = path.relative(directory, filename);
+  assert.equal([...html.matchAll(/data-site-search/g)].length, 1, `${name}: exactly one shared search.`);
+  assert.ok(html.includes(`<link rel="stylesheet" href="${root}assets/search.css"><script src="${root}assets/predictive-search.js" defer></script><script src="${root}assets/search-index.js" defer></script><script src="${root}assets/site-search.js" defer></script>`), `${name}: shared search assets missing or out of order.`);
+  assert.match(html, new RegExp(`<form class="site-search" role="search" action="${root.replaceAll(".", "\\.")}index\\.html#collection" data-site-search data-search-root="${root.replaceAll(".", "\\.")}" data-search-kind="(?:showcase|landing|readme)"[^>]*><label class="site-search-label" for="site-search">Search the collection</label><span class="site-search-icon" aria-hidden="true"></span><input id="site-search" name="q" type="search"`), `${name}: search markup must be identical.`);
+  assert.match(html, /<header class="(?:site-header|showcase-header|document-header)">[\s\S]*?data-site-search[\s\S]*?<\/header>/, `${name}: search belongs in the page header.`);
+}
+const searchCss = fs.readFileSync(path.join(directory, "assets", "search.css"), "utf8");
+assert.match(searchCss, /\.site-search\{[^}]*max-width:min\(420px,66\.67%\)/, "Search bar width stays within 66.67% of its container.");
+assert.match(searchCss, /transition:opacity \.14s/, "Suggestions fade within 100-180 ms.");
+assert.match(searchCss, /prefers-reduced-motion:reduce/);
+assert.match(searchCss, /html:not\(\.has-js\) \.site-search\{display:none\}/, "Without JavaScript the inactive search stays hidden.");
 assert.equal(fs.readdirSync(path.join(root, ".template", "project-types", "helpers", "types"), { withFileTypes: true }).filter((entry) => entry.isDirectory()).length, 9);
 console.log(`PASS: exactly 20 unique README editions, 20 unique landings and one showcase; ${links} local links/assets checked.`);
 console.log(`PASS: ${chapterTitles.length} complete chapters per README, semantic landmarks, all 100 palette contrast pairs >= 4.5:1.`);
 console.log("PASS: generated freshness, reduced-motion/mobile styles, local-only assets and dependency-free script syntax.");
+console.log(`PASS: one identical header search on all ${pages.length} pages, loading the shared predictor, generated index and controller.`);
 verifyDocumentation();
 verifyPredictiveSearch();

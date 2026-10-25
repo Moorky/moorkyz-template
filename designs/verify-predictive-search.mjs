@@ -1,9 +1,65 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import vm from "node:vm";
 import { createRequire } from "node:module";
 import { performance } from "node:perf_hooks";
+import { searchIndex } from "./search.mjs";
+
+// The real generated index, as every page loads it: KLSE must predict Karlsruhe from the workspace dictionary.
+function verifyWorkspaceIndex(createPredictor, normalize) {
+  const sandbox = {};
+  sandbox.globalThis = sandbox;
+  vm.runInNewContext(fs.readFileSync(new URL("./assets/search-index.js", import.meta.url), "utf8"), sandbox);
+  const index = sandbox.MoorkyzSearchIndex;
+  assert.equal(index.designs.length, 20);
+  assert.ok(index.chapters.length >= 3 && index.chapters.every((chapter) => chapter.id && chapter.title && !/[<>]/.test(chapter.title)));
+  assert.ok(index.entries.some((entry) => entry.kind === "Preset"), "Project-type presets are indexed from real folders.");
+  const entries = [
+    ...index.designs.flatMap((d) => [{ value: d.name, kind: "Design", weight: 40, contexts: [d.category, d.tone] }, ...d.note.split("/").map((phrase) => ({ value: phrase.trim(), kind: "Character", weight: 20 }))]),
+    ...index.chapters.map((chapter) => ({ value: chapter.title, kind: "Chapter", weight: 25, contexts: ["readme"] })),
+    ...index.entries,
+  ];
+  const workspace = createPredictor({ entries });
+  const klse = workspace.predict("KLSE")[0];
+  assert.deepEqual([klse.value, klse.kind, klse.completion.mode], ["Karlsruhe", "Location", "replace"], "KLSE -> Karlsruhe from the shipped workspace dictionary.");
+  assert.deepEqual([workspace.predict("Karl")[0].value, workspace.predict("Karl")[0].completion.text], ["Karlsruhe", "sruhe"]);
+  assert.equal(workspace.predict("maint")[0].value, "Maintenance checkups");
+  assert.equal(workspace.predict("glac")[0].value, "Glacier");
+  assert.equal(workspace.predict("get st", { context: ["readme"] })[0].value, "Get started");
+  assert.ok(index.entries.every((entry) => normalize(entry.value)), "Every dictionary value is searchable.");
+
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "moorkyz-search-dictionary-"));
+  try {
+    const designsFolder = path.join(fixture, "designs");
+    fs.mkdirSync(path.join(fixture, ".template", "project-types", "helpers", "types", "node"), { recursive: true });
+    fs.mkdirSync(designsFolder);
+    fs.writeFileSync(path.join(fixture, "README.md"), "# Fixture\n");
+    const base = { directory: designsFolder, root: fixture, designs: [{ id: "01-a", name: "A", note: "n", category: "Quiet", tone: "dark", art: "paper" }], documentationThemes: ["paper"], chapters: [{ id: "x", title: "X" }] };
+    const write = (entries) => fs.writeFileSync(path.join(designsFolder, "search-dictionary.json"), JSON.stringify({ entries }));
+    write([{ value: "Karlsruhe", kind: "Location" }, { value: "Fixture", kind: "Project", href: "../README.md" }]);
+    assert.match(searchIndex(base), /"value": "Karlsruhe"/);
+    for (const [entries, message] of [
+      [[{ value: "Gone", kind: "Project", href: "../missing.md" }], /does not exist/],
+      [[{ value: "Remote", kind: "Project", href: "https://example.com" }], /relative local path/],
+      [[{ value: "Rooted", kind: "Project", href: "/etc/passwd" }], /relative local path/],
+      [[{ value: "Same", kind: "Location" }, { value: "same", kind: "Location" }], /duplicate/],
+      [[{ value: " ", kind: "Location" }], /'value' is required/],
+      [[{ value: "Odd", kind: "location!" }], /'kind'/],
+      [[{ value: "Extra", kind: "Location", script: "x" }], /unknown field/],
+    ]) {
+      write(entries);
+      assert.throws(() => searchIndex(base), message);
+    }
+  } finally {
+    fs.rmSync(fixture, { recursive: true, force: true });
+  }
+}
 
 export function verifyPredictiveSearch() {
   const { normalize, prefixDistance, createPredictor } = createRequire(import.meta.url)("./assets/predictive-search.js");
+  verifyWorkspaceIndex(createPredictor, normalize);
   const places = ["Karlsruhe", "Kelsterbach", "Kassel", "Kiel", "Köln", "Konstanz", "Kaiserslautern", "Heidelberg", "Mannheim", "Pforzheim", "Stuttgart", "Zürich"];
   const top = (predictor, query, options) => predictor.predict(query, options)[0];
 
@@ -81,5 +137,5 @@ export function verifyPredictiveSearch() {
   for (const query of ["m", "mo", "moo", "moor"]) bulk.predict(query, { tiers: "fast" });
   const fast = (performance.now() - fastStart) / 4;
   assert.ok(fast < 15, `Immediate prefix prediction averaged ${fast.toFixed(1)} ms.`);
-  console.log(`PASS: predictive search: KLSE -> Karlsruhe, prefix/typo/accent/abbreviation/phrase/alias/context/recency ranking and cache; 5,001-entry uncached average ${average.toFixed(1)} ms, fast tier ${fast.toFixed(1)} ms.`);
+  console.log(`PASS: predictive search: generated workspace index (KLSE -> Karlsruhe, tools, chapters, presets) and dictionary validation; KLSE -> Karlsruhe, prefix/typo/accent/abbreviation/phrase/alias/context/recency ranking and cache; 5,001-entry uncached average ${average.toFixed(1)} ms, fast tier ${fast.toFixed(1)} ms.`);
 }

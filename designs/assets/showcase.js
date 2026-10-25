@@ -1,6 +1,7 @@
 "use strict";
 const cards = [...document.querySelectorAll(".collection-card")];
-const search = document.querySelector("#design-search");
+const search = document.querySelector("#site-search");
+const searchForm = document.querySelector("[data-site-search]");
 const count = document.querySelector("#result-count");
 const empty = document.querySelector(".empty-state");
 const filterButtons = [...document.querySelectorAll("[data-filter]")];
@@ -26,37 +27,40 @@ function filter() {
   empty.hidden = visible !== 0;
   return visible;
 }
-function suggestionEntries() {
-  const entries = [];
-  for (const card of cards) {
-    const contexts = [card.dataset.category, card.dataset.tone];
-    entries.push({ value: card.querySelector("h3").textContent.trim(), kind: "Design", weight: 40, contexts });
-    for (const phrase of card.querySelector(".card-info p").textContent.split("/")) entries.push({ value: phrase.trim(), kind: "Character", weight: 20, contexts });
-    entries.push({ value: card.dataset.category, kind: "Style", weight: 30, contexts });
-    entries.push({ value: card.dataset.tone === "dark" ? "Dark" : "Light", kind: "Tone", weight: 10, contexts });
-    if (card.dataset.name.includes("compact documentation")) entries.push({ value: "Compact documentation", kind: "Edition", weight: 15, contexts: [...contexts, "readme"] });
-    for (const link of pageLinks(card)) entries.push({ value: link.getAttribute("href"), kind: "File", weight: -40, contexts: [...contexts, link.dataset.pageLink] });
-  }
-  return entries;
+function setCategory(value) {
+  if (!filterButtons.some((button) => button.dataset.filter === value)) return;
+  category = value;
+  for (const item of filterButtons) item.setAttribute("aria-pressed", String(item.dataset.filter === value));
 }
-const predictor = predictive?.createPredictor({ entries: suggestionEntries(), limit: 6 });
-if (predictor) {
-  predictive.attach(search, predictor, {
-    label: "Design suggestions",
-    context: () => [category === "All" ? "" : category, kind],
-    onCommit: (value) => {
-      if (filter() > 0) predictor.record(value);
-    },
-  });
+function setKind(value) {
+  if (!["landing", "readme"].includes(value)) return;
+  kind = value;
+  document.body.classList.toggle("readme-priority", kind === "readme");
+  pressGroup("[data-kind]", "kind", kind);
+}
+// Collection links from the shared search on other pages: ?q=, ?style= and ?view=.
+function applyParameters(params) {
+  if (params.has("q")) search.value = params.get("q");
+  if (params.has("style")) setCategory(params.get("style"));
+  if (params.has("view")) setKind(params.get("view"));
+  return filter();
 }
 for (const button of filterButtons) {
   button.addEventListener("click", () => {
-    category = button.dataset.filter;
-    for (const item of filterButtons) item.setAttribute("aria-pressed", String(item === button));
+    setCategory(button.dataset.filter);
     filter();
   });
 }
 search.addEventListener("input", filter);
+searchForm.addEventListener("moorkyz:search-commit", (event) => {
+  const target = new URL(event.detail.href, location.href);
+  if (target.pathname !== location.pathname) return;
+  event.preventDefault();
+  if (!target.searchParams.has("q")) search.value = event.detail.value;
+  if (applyParameters(target.searchParams) > 0) event.detail.record();
+  window.MoorkyzSiteSearch?.refresh();
+  document.querySelector("#collection").scrollIntoView({ block: "start", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+});
 function pressGroup(selector, attribute, value) {
   for (const button of document.querySelectorAll(selector)) button.setAttribute("aria-pressed", String(button.dataset[attribute] === value));
 }
@@ -71,27 +75,23 @@ function updatePreview() {
   pressGroup("[data-preview-kind]", "previewKind", kind);
 }
 for (const button of document.querySelectorAll("[data-kind]")) {
-  button.addEventListener("click", () => {
-    kind = button.dataset.kind;
-    document.body.classList.toggle("readme-priority", kind === "readme");
-    pressGroup("[data-kind]", "kind", kind);
-  });
+  button.addEventListener("click", () => setKind(button.dataset.kind));
 }
+const initial = new URLSearchParams(location.search);
+if (["q", "style", "view"].some((name) => initial.has(name))) applyParameters(initial);
 for (const button of document.querySelectorAll("[data-preview]")) {
   button.addEventListener("click", () => {
     trigger = button;
     previewCard = button.closest(".collection-card");
-    predictor?.record(previewCard.querySelector("h3").textContent.trim());
+    window.MoorkyzSiteSearch?.record(previewCard.querySelector("h3").textContent.trim());
     updatePreview();
     dialog.showModal();
   });
 }
 for (const button of document.querySelectorAll("[data-preview-kind]")) {
   button.addEventListener("click", () => {
-    kind = button.dataset.previewKind;
+    setKind(button.dataset.previewKind);
     updatePreview();
-    document.body.classList.toggle("readme-priority", kind === "readme");
-    pressGroup("[data-kind]", "kind", kind);
   });
 }
 for (const button of document.querySelectorAll("[data-size]")) {

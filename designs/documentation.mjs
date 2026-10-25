@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 import { designs, documentationThemes } from "./catalog.mjs";
+import { searchBox, searchHead } from "./search.mjs";
 
 const { renderReadme, scopedPath } = createRequire(import.meta.url)("../moorkyz");
 const escape = (value) => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
@@ -11,7 +12,7 @@ const plain = (value) => decode(value.replace(/<[^>]*>/g, ""));
 const slug = (value) => plain(value).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "") || "section";
 const key = (filename) => process.platform === "win32" ? filename.toLowerCase() : filename;
 
-export function renderDocumentation({ markdown, theme = "paper", sourceName = "README.md", rewriteHref = (href) => href, links = [], adjacent = [], collectionId, scriptHref }) {
+export function renderDocumentation({ markdown, theme = "paper", sourceName = "README.md", rewriteHref = (href) => href, links = [], adjacent = [], collectionId, scriptHref, searchRoot }) {
   const design = designs.find((item) => item.art === theme && documentationThemes.includes(theme));
   if (!design) throw new Error(`Unknown documentation theme '${theme}'. Choose ${documentationThemes.join(", ")}.`);
   const rendered = renderReadme(markdown).match(/<main>([\s\S]*?)<\/main>/);
@@ -47,9 +48,9 @@ export function renderDocumentation({ markdown, theme = "paper", sourceName = "R
   const colors = ["bg", "surface", "ink", "muted", "accent"].map((name) => `--${name}:${design[name]}`).join(";");
   const styles = fs.readFileSync(new URL("./assets/documentation.css", import.meta.url), "utf8");
   return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><title>${escape(title)}</title><style>${styles}</style>${scriptHref ? `<script src="${escape(scriptHref)}" defer></script>` : ""}</head>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><title>${escape(title)}</title><style>${styles}</style>${scriptHref ? `<script src="${escape(scriptHref)}" defer></script>` : ""}${searchRoot !== undefined ? searchHead(searchRoot) : ""}</head>
 <body class="documentation documentation-${theme}" data-documentation-theme="${theme}"${collectionId ? ` data-design="${escape(collectionId)}" data-kind="readme"` : ""} style="${colors};--line:color-mix(in srgb,var(--ink) 17%,transparent)"><a class="skip-link" href="#main">Skip to content</a>
-<header class="document-header"><a class="document-label" href="#main">Documentation</a><span class="document-filename">${escape(sourceName)}</span>${links.length ? `<nav aria-label="Page navigation">${navigation(links)}</nav>` : ""}</header>
+<header class="document-header"><a class="document-label" href="#main">Documentation</a><span class="document-filename">${escape(sourceName)}</span>${searchRoot !== undefined ? searchBox({ root: searchRoot, kind: "readme", design: collectionId }) : ""}${links.length ? `<nav aria-label="Page navigation">${navigation(links)}</nav>` : ""}</header>
 ${outline ? `<details class="mobile-outline"><summary>On this page</summary><nav aria-label="Document sections">${outline}</nav></details>` : ""}
 <main id="main" class="document-layout${outline ? "" : " without-outline"}">${outline ? `<aside class="document-outline"><p class="outline-label">On this page</p><nav aria-label="README chapters">${outline}</nav></aside>` : ""}<article class="doc-body" aria-label="Complete README">${content}</article></main>
 ${adjacent.length ? `<footer class="document-footer"><span>${escape(design.name)} / Documentation edition</span><nav aria-label="Adjacent designs">${navigation(adjacent)}</nav></footer>` : ""}</body></html>

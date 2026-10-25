@@ -13,6 +13,7 @@ Run commands from the repository root unless a tool's README says otherwise.
 | [Claim Template (use once)](claim-template/README.md) | [CreateProject.ps1](claim-template/CreateProject.ps1) | One-time adoption of a template copy for a real project; never apply in the template itself |
 | [Soft copy](soft-copy/README.md) | [CopyTemplate.ps1](soft-copy/CopyTemplate.ps1) | Choose a target and files in a lightweight Windows GUI; preserve existing files, record JSON pairs, optionally force replacements, and revert using local saved originals |
 | [Copilot settings](copilot-settings/README.md) | [Setup-CopilotProject.ps1](copilot-settings/Setup-CopilotProject.ps1) | Preview or configure reviewed VS Code/Copilot settings for a specified project or user |
+| [Script icons](script-icons/README.md) | [SetScriptIcons.ps1](script-icons/SetScriptIcons.ps1) | Create local Windows shortcuts with the supplied Moorkyz icon; preserve scripts, executable resources and file associations |
 
 Every tool folder keeps its entry script(s) and `README.md` at that folder's root.
 Supporting files live under `helpers/`: maintenance checkups, project-type

@@ -81,6 +81,7 @@ const toolEntrypoints = {
   "claim-template": ["CreateProject.ps1"],
   maintenance: ["RunCheckups.ps1"],
   "project-types": ["SetProjectType.ps1", "SetProjectType.cmd"],
+  "script-icons": ["SetScriptIcons.ps1"],
   "soft-copy": ["CopyTemplate.ps1"],
 };
 for (const [tool, entrypoints] of Object.entries(toolEntrypoints)) {

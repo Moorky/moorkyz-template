@@ -85,6 +85,13 @@ Nothing is written to log files.
   copy-created files/directories, later-edit refusal and partial-copy recovery.
   It never copies into or reverts an existing user repository.
 
+- [08-script-icons.ps1](helpers/checkups/08-script-icons.ps1) verifies branded
+Windows shortcuts in disposable fixtures using both available PowerShell hosts:
+real COM targets, arguments, working directories and icon properties, supplied
+ICO integrity, source preservation, inventories, safe modes and conflict/link
+refusal. Non-Windows hosts check the explicit unsupported-platform error and
+skip Windows COM assertions. No existing launchers or file associations change.
+
 ## Safe modes
 
 Every PowerShell entrypoint, including the runner and checkups, accepts `-DryRun`.

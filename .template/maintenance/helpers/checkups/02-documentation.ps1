@@ -163,6 +163,22 @@ assert.match(rendered, /<code>&lt;unsafe&gt;<\/code> &amp; text/);
 assert.match(rendered, /<pre><code>&lt;command&gt;<\/code><\/pre>/);
 assert.throws(() => renderReadme("```js\nunfinished"), /unclosed code fence/);
 console.log("PASS: portable CLI, runtime ignore boundaries, private reporting and README escaping safeguards.");
+
+const forms = path.join(root, ".github", "ISSUE_TEMPLATE");
+if (fs.existsSync(forms)) {
+  const advisory = policy.match(/https:\/\/github\.com\/[A-Za-z0-9-]+\/[A-Za-z0-9_.-]+\/security\/advisories\/new/)[0];
+  const chooser = fs.readFileSync(path.join(forms, "config.yml"), "utf8");
+  assert.ok(chooser.includes(`url: ${advisory}`), "The issue chooser must send vulnerabilities to the SECURITY.md reporting link.");
+  const names = fs.readdirSync(forms).filter((name) => /\.ya?ml$/.test(name) && name !== "config.yml");
+  assert.ok(names.length, "The issue template folder must contain at least one issue form.");
+  for (const name of names) {
+    const form = fs.readFileSync(path.join(forms, name), "utf8");
+    for (const key of ["name", "description", "body"]) assert.match(form, new RegExp(`^${key}:`, "m"), `${name}: missing ${key}`);
+    const ids = [...form.matchAll(/^\s+id: ([a-z0-9_-]+)\r?$/gm)].map((match) => match[1]);
+    assert.equal(new Set(ids).size, ids.length, `${name}: issue form field ids must be unique.`);
+  }
+  console.log(`PASS: ${names.length} issue forms have required keys and unique ids; the chooser points to private vulnerability reporting.`);
+}
 '@
 $source | & $node - $root
 if ($LASTEXITCODE -ne 0) { throw "Documentation check exited with code $LASTEXITCODE." }

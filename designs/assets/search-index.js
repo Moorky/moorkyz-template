@@ -179,6 +179,10 @@ globalThis.MoorkyzSearchIndex = {
    "title": "Template readiness"
   },
   {
+   "id": "template-library",
+   "title": "Template library"
+  },
+  {
    "id": "design-collection",
    "title": "Design collection"
   },

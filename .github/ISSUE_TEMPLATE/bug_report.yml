@@ -1,0 +1,80 @@
+name: Bug report
+description: Report reproducible incorrect behavior in this repository's tools, checks, documentation or templates.
+title: "Bug: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use a minimal reproduction with disposable data. Redact private paths, names, tokens and output.
+        **Never report a security vulnerability here.** Use the private reporting link in the issue chooser and follow `SECURITY.md`.
+  - type: input
+    id: version
+    attributes:
+      label: Affected commit or version
+      description: Run `git rev-parse --short HEAD` in the affected repository.
+      placeholder: abc1234
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - Other (describe below)
+    validations:
+      required: true
+  - type: input
+    id: runtimes
+    attributes:
+      label: Node.js and PowerShell versions
+      description: Output of `node --version` and `$PSVersionTable.PSVersion`, including the host (for example pwsh or Windows PowerShell 5.1).
+      placeholder: node v24.x; pwsh 7.x
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Exact command or steps
+      description: The exact command line, working directory and options, or numbered steps.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: The visible result, exit code and whether any files changed.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: The smallest disposable fixture or file set that shows the problem. Never attach real project data, logs or archives.
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Relevant output
+      description: Redacted terminal output. It is formatted as code automatically.
+      render: text
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Confirmations
+      options:
+        - label: I removed secrets, credentials, personal data and private paths from this report.
+          required: true
+        - label: This is not a security vulnerability; those are reported privately as described in SECURITY.md.
+          required: true

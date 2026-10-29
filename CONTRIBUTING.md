@@ -21,7 +21,8 @@ effort proportional to the change, but do not skip required evidence or approval
 - Record the requested outcome, acceptance criteria and relevant edge cases.
 - For a bug report, include the affected commit, operating system, Node and
   PowerShell versions, exact command, expected/actual behavior and a minimal
-  reproduction using disposable data. Redact private paths and output.
+  reproduction using disposable data. Redact private paths and output. On GitHub,
+  the [bug report form](.github/ISSUE_TEMPLATE/bug_report.yml) asks for exactly this.
 - Coordinate shared files through the work queue. Do not take over active work,
   stage another contributor's changes or rewrite their history.
 
@@ -35,7 +36,10 @@ effort proportional to the change, but do not skip required evidence or approval
   generated outputs and checks before developing.
 - For a feature, describe the problem and acceptance criteria before choosing a
   product runtime, adding dependencies or changing a public command. Obtain any
-  required approval before high-impact or external actions.
+  required approval before high-impact or external actions. Use the
+  [task brief](docs/TASK_BRIEF_TEMPLATE.md) or the change request form, plan larger
+  changes with the [design template](docs/DESIGN_TEMPLATE.md) and record lasting
+  choices with the [decision template](docs/DECISION_TEMPLATE.md).
 
 Use a supported Node.js 24 LTS patch and PowerShell 7 (`pwsh`) for the full
 maintenance command. Windows PowerShell 5.1 compatibility is also covered by
@@ -102,7 +106,9 @@ Complete these gates in order before the final audit and local commit:
    Commit only task-owned changes and their audit in one focused local commit
    when required checks and approvals pass. Report the outcome, evidence, audit
    path, commit hash and remaining risks; record completion or a precise handoff
-   in the queue. Do not mark blocked work complete or push without approval.
+   in the queue. Do not mark blocked work complete or push without approval. If an
+   approved pull request follows, fill in the
+   [pull request template](.github/pull_request_template.md).
 
 ## Review checklist
 

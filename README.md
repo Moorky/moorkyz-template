@@ -1,6 +1,8 @@
 # Moorkyz Template
 
-Reusable repository baseline for Moorkyz projects: a portable local CLI, recoverable storage, agent workflow, documentation and CI. No application, database, Docker runtime or deployment target is chosen.
+Reusable repository baseline and template library for Moorkyz projects: a portable local CLI, recoverable storage, agent workflow, documentation, CI, twenty design directions and reusable document and collaboration templates. No application, database, Docker runtime or deployment target is chosen for your product; only this repository's own template website has a deployment package.
+
+New here? Start with the [template introduction](TEMPLATE_INTRODUCTION.md): role-based start paths for developers and AI agents, common tasks, the template library, a complete file map, deliberate decisions and known pitfalls.
 
 ## Get started
 
@@ -16,9 +18,9 @@ Run `.\.template\maintenance\RunCheckups.ps1` to check the template tools and do
 
 ## Start a new project
 
-Copy the template, then use [Claim Template (use once)](.template/claim-template/README.md) for one-time adoption. Fill in [.template/claim-template/helpers/setup.config.json](.template/claim-template/helpers/setup.config.json): `projectName` (lowercase, e.g. `my-app`), `displayName`, `githubOwner`, the `projectTypes` to add and the template-only paths to `remove`. Set `projectTypes` to `[]` for no stack. For example, `["node", "web"]` selects Node tooling and browser assets without Docker. Only the explicitly listed `remove` paths are deleted; retain maintenance checkups and never use existing runtime data for verification.
+Copy the template, then use [Claim Template (use once)](.template/claim-template/README.md) for one-time adoption. Fill in [.template/claim-template/helpers/setup.config.json](.template/claim-template/helpers/setup.config.json): `projectName` (lowercase, e.g. `my-app`), `displayName`, `githubOwner`, the `projectTypes` to add and the template-only paths to `remove`. The shipped values are placeholders that validation rejects until you replace them. Set `projectTypes` to `[]` for no stack. For example, `["node", "web"]` selects Node tooling and browser assets without Docker. Only the explicitly listed `remove` paths are deleted; retain maintenance checkups and never use existing runtime data for verification.
 
-Run [CreateProject.ps1](.template/claim-template/CreateProject.ps1) (right-click, Run with PowerShell, or `powershell -ExecutionPolicy Bypass -File ".template\claim-template\CreateProject.ps1"`); add `-WhatIf` to preview. Until the config is valid it lists what to fill in and changes nothing. It then shows its plan and asks before it copies selected project types, permanently removes the listed paths, fills in the project name and owner, sets the README title and regenerates `README.html`. It always ends with "Press any key to continue", and rerunning is safe. Add `".template/claim-template"` to `remove` to delete only the adoption tool afterwards. The former `overlay` config key is replaced by `projectTypes`.
+Run [CreateProject.ps1](.template/claim-template/CreateProject.ps1) (right-click, Run with PowerShell, or `powershell -ExecutionPolicy Bypass -File ".template\claim-template\CreateProject.ps1"`); add `-WhatIf` to preview. Until the config is valid it lists what to fill in and changes nothing. It then shows its plan and asks before it copies selected project types, permanently removes the listed paths, fills in the project name and owner, sets the README title and regenerates `README.html`. It always ends with "Press any key to continue", and rerunning is safe. Keep `.template/claim-template` afterwards: retained audits, guides and README editions link to it, so removing it alone fails the maintenance link check. The former `overlay` config key is replaced by `projectTypes`.
 
 Then document the stack and add its manifest, scripts and lockfile. A missing application fails explicitly instead of starting a fabricated server.
 
@@ -36,6 +38,12 @@ The shared baseline is usable without adopting a product stack. Some values must
 | Operations | Local logs, recoverable archives and verification | Hosting, domain, backups, monitoring and privately managed credentials |
 
 Placeholders in adoption configuration, example project paths and opt-in presets are intentional. Review the [preset completion checklist](.template/project-types/README.md#complete-the-selected-presets) before treating copied configuration as production-ready. No template command provisions infrastructure, establishes account access or verifies a live deployment.
+
+## Template library
+
+Besides the engineering baseline, this repository is a library of reusable templates; the [template introduction](TEMPLATE_INTRODUCTION.md) describes each one with usage notes. Design templates: twenty landing pages, twenty README editions and five compact documentation themes in the [design collection](designs/README.md), browsable through the root [catalog](index.html) and its [viewer](website/viewer.html). Document templates: [task brief](docs/TASK_BRIEF_TEMPLATE.md), [design](docs/DESIGN_TEMPLATE.md), [decision record](docs/DECISION_TEMPLATE.md) and [audit](docs/AUDIT_TEMPLATE.md). Collaboration templates: GitHub [issue forms](.github/ISSUE_TEMPLATE/) for bug reports and change requests, which route vulnerabilities to private reporting, and a [pull request template](.github/pull_request_template.md). Configuration templates: nine opt-in [project-type packs](.template/project-types/README.md) and reviewed [Copilot settings](.template/copilot-settings/README.md) with a portable agent guide.
+
+The [catalog website](website/README.md) and its [deployment package](website/deploy/README.md) present this repository's own templates; they are not part of an adopted product's runtime.
 
 ## Design collection
 

@@ -45,6 +45,9 @@ Nothing is written to log files.
   It also rejects retired script names in active docs/examples and verifies
   manifest icon filenames, the shared CI Node pin and maintenance command,
   runtime ignore boundaries, private reporting and README escaping safeguards.
+  When `.github/ISSUE_TEMPLATE/` exists, each issue form needs `name`,
+  `description` and `body` with unique field ids, and the chooser must link the
+  same private reporting address as `SECURITY.md`.
 - [03-project-types.ps1](helpers/checkups/03-project-types.ps1) validates JSON and ESM
   syntax without importing modules or installing packages. It verifies that the
   Node starter runs maintenance checks and that tooling presets remain
@@ -83,6 +86,9 @@ Nothing is written to log files.
   the actual GUI controls and launcher, including force cancellation and
   confirmation, plus recovery previews, exact restoration, safe removal of
   copy-created files/directories, later-edit refusal and partial-copy recovery.
+  Where Windows provides 8.3 short names, revert and file listing are also
+  exercised with short recovery, target and template paths, as created by the
+  short `TEMP` path on GitHub's Windows runners.
   It never copies into or reverts an existing user repository.
 
 - [08-script-icons.ps1](helpers/checkups/08-script-icons.ps1) verifies branded

@@ -21,7 +21,9 @@ configuration and use `-WhatIf` before authorizing changes.
 | `remove` | Explicit template-only paths to delete permanently. Nothing unlisted is removed. Retain maintenance checkups and never use existing runtime data as a test fixture. |
 
 The script refuses to change anything until `projectName` and `displayName` are
-set and every value is valid; it lists what is missing.
+set and every value is valid; it lists what is missing. The shipped `projectTypes`
+text is a placeholder: replace it with `[]` or a list of type names. The script does
+not prompt for types.
 
 See the [preset guide](../project-types/README.md) for all available types and
 tool-package requirements. On Windows, [SetProjectType.cmd](../project-types/SetProjectType.cmd)
@@ -48,4 +50,6 @@ pass `-DryRun`. See [maintenance checkups](../maintenance/README.md).
 
 It always ends with "Press any key to continue". This is a one-time adoption
 tool, not routine maintenance; rerunning is safe if adoption needs to be retried.
-Add `.template/claim-template` to `remove` to delete the setup files when you are done.
+Keep this folder after adoption: retained audits, the tool catalog, guides and the
+README editions link to it, and the storage checkup exercises it, so deleting it
+alone fails the maintenance checks.

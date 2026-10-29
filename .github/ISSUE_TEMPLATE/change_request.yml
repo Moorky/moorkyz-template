@@ -1,0 +1,55 @@
+name: Change request
+description: Propose a feature, improvement or task with an outcome and acceptance criteria that a developer or AI agent can act on.
+title: "Change: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the outcome, not only a solution. These sections match `docs/TASK_BRIEF_TEMPLATE.md`, so the issue can be handed to a developer or an AI agent as written.
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome
+      description: What must be true when this is done, and why it matters.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Observable results, including edge cases and failure behavior. One per line.
+      value: "- [ ] "
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: In scope, out of scope, and existing files, data or work that must be preserved.
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Constraints and decisions
+      description: Platforms, versions, compatibility, security or accessibility needs; decisions already made; open questions and the default if nobody answers.
+  - type: checkboxes
+    id: approvals
+    attributes:
+      label: External or irreversible actions this may need
+      description: Ticking a box only flags the need. Each action still requires explicit owner approval (see AGENTS.md).
+      options:
+        - label: Push, merge or open a pull request
+        - label: Deploy, publish, spend or contact external parties
+        - label: Add a high-impact dependency or migrate a framework
+        - label: Delete or migrate non-disposable data
+        - label: Change credentials or account settings
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification
+      description: Checks, browsers, platforms or reviews needed beyond maintenance and the product's own checks.
+  - type: textarea
+    id: context
+    attributes:
+      label: Context and links
+      description: Related issues, files, audits, designs or decision records.

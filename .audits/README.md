@@ -11,6 +11,13 @@ final code/link/content availability checks, documentation/generated updates and
 final-state rechecks. Distinguish self-review from independent or human approval;
 record unavailable references, missing approvals and blockers explicitly.
 
+## Adopted projects
+
+Projects created with [Claim Template](../.template/claim-template/README.md) do not
+inherit these reports: their first adoption keeps only the general guidance above and
+starts a clean trail with an adoption record that names this template's repository,
+version and commit SHA.
+
 ## Current names and locations
 
 Historical reports preserve their original commands, filenames and observed test

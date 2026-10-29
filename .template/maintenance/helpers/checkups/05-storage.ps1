@@ -11,7 +11,6 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $root = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)))
 $node = (Get-Command node -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
-$engine = (Get-Process -Id $PID).Path
 $source = @'
 "use strict";
 const assert = require("node:assert/strict");
@@ -21,7 +20,6 @@ const os = require("node:os");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 const root = process.argv[2];
-const engine = process.argv[3];
 assert.equal(process.versions.node.split(".")[0], "24", "Node.js 24 LTS is required.");
 const storage = require(path.join(root, "moorkyz"));
 const now = Date.UTC(2026, 9, 24);
@@ -249,26 +247,6 @@ async function main() {
       assert.match(warning.stderr, /above storage\.maxArchiveBytes/);
       assert.ok(fs.existsSync(blocked));
     });
-    await check("project adoption preserves .audits history", async () => {
-      const directory = fixture();
-      const tool = path.join(directory, ".template", "claim-template");
-      fs.cpSync(path.join(root, ".template", "claim-template"), tool, { recursive: true });
-      fs.copyFileSync(path.join(root, "moorkyz"), path.join(directory, "moorkyz"));
-      fs.mkdirSync(path.join(directory, ".audits"));
-      const report = path.join(directory, ".audits", "history.md");
-      fs.writeFileSync(report, "moorkyz-project historical evidence\n");
-      fs.writeFileSync(path.join(tool, "helpers", "setup.config.json"), JSON.stringify({
-        projectName: "archive-fixture", displayName: "Archive Fixture",
-        githubOwner: "fixture-owner", projectTypes: [], remove: [],
-      }));
-      const result = spawnSync(engine, ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-        "-File", path.join(tool, "CreateProject.ps1"), "-Yes", "-NoPause"], {
-        cwd: workspace, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 30000,
-      });
-      if (result.error) throw result.error;
-      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
-      assert.equal(fs.readFileSync(report, "utf8"), "moorkyz-project historical evidence\n");
-    });
     console.log(`PASS: ${passed} storage/audit regression groups; all actions used disposable fixtures.`);
   } finally {
     fs.rmSync(workspace, { recursive: true });
@@ -277,5 +255,5 @@ async function main() {
 main().catch((error) => { console.error(error); process.exitCode = 1; });
 '@
 
-$source | & $node - $root $engine
+$source | & $node - $root
 if ($LASTEXITCODE -ne 0) { throw 'Storage/audit regression check failed.' }

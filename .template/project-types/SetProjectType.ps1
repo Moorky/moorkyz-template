@@ -10,6 +10,9 @@ All selected files are checked before anything is copied. Different existing
 targets, conflicting types, links and junctions are refused. Identical targets
 are left unchanged. The entire .template/project-types folder is kept: nothing is deleted,
 moved or archived, and more types can be added later.
+-SelectOnly shows the same menu but only outputs the confirmed type names (none
+when the menu is quit); it copies nothing. Claim Template uses it for its
+optional project-type prompt.
 
 .EXAMPLE
 .\.template\project-types\SetProjectType.ps1
@@ -19,6 +22,7 @@ moved or archived, and more types can be added later.
 [CmdletBinding(SupportsShouldProcess)]
 param(
     [switch]$DryRun,
+    [switch]$SelectOnly,
     [Parameter(Position = 0, ValueFromRemainingArguments = $true)]
     [string[]]$ProjectType
 )
@@ -65,8 +69,9 @@ function Read-SelectorKey {
     catch { throw "This host cannot read menu keys. Run in a terminal or pass project type names: $($_.Exception.Message)" }
 }
 
-function Read-ProjectTypeSelection([string[]]$Names) {
+function Read-ProjectTypeSelection([string[]]$Names, [switch]$SelectOnly) {
     if (-not $Names.Count) { throw 'No project types are available in .template/project-types/helpers/types.' }
+    $quit = if ($SelectOnly) { 'Esc/Q: no types' } else { 'Esc/Q: quit' }
     $checked = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
     $index = 0
     $number = ''
@@ -91,7 +96,7 @@ function Read-ProjectTypeSelection([string[]]$Names) {
             Write-Host $line.TrimEnd()
         }
         Write-Host ''
-        Write-Host 'Up/Down: move | Space: toggle | Enter: review | #: select | Esc/Q: quit'
+        Write-Host "Up/Down: move | Space: toggle | Enter: review | #: select | $quit"
         if ($number) { Write-Host "Number: $number" }
         if ($notice) { Write-Host $notice }
         $key = Read-SelectorKey
@@ -133,10 +138,16 @@ function Read-ProjectTypeSelection([string[]]$Names) {
         if (-not $checked.Count) { [void]$checked.Add($Names[$index]) }
         $choice = @($Names | Where-Object { $checked.Contains($_) })
         Write-Host ''
-        Write-Host "Are you sure you want to add: $($choice -join ', ')?"
-        Write-Host 'Files will be copied into the repository. Different existing files will not be overwritten.'
-        Write-Host 'The entire .template/project-types folder stays available. Nothing will be deleted or archived.'
-        Write-Host 'Y: confirm | N/Enter/Space/Esc: back | Q: quit'
+        if ($SelectOnly) {
+            Write-Host "Use these project types: $($choice -join ', ')?"
+            Write-Host 'Nothing is copied by this selection.'
+            Write-Host 'Y: confirm | N/Enter/Space/Esc: back | Q: no types'
+        } else {
+            Write-Host "Are you sure you want to add: $($choice -join ', ')?"
+            Write-Host 'Files will be copied into the repository. Different existing files will not be overwritten.'
+            Write-Host 'The entire .template/project-types folder stays available. Nothing will be deleted or archived.'
+            Write-Host 'Y: confirm | N/Enter/Space/Esc: back | Q: quit'
+        }
         while ($true) {
             $answer = Read-SelectorKey
             if ($answer.Character -match '^[yY]$') { return $choice }
@@ -151,12 +162,17 @@ Assert-NoLink (Get-Item -LiteralPath $templateToolsRoot -Force)
 Assert-NoLink (Get-Item -LiteralPath $projectTypesRoot -Force)
 Assert-NoLink (Get-Item -LiteralPath $helpers -Force)
 Assert-NoLink (Get-Item -LiteralPath $types -Force)
+if ($SelectOnly -and $ProjectType) { throw '-SelectOnly opens the menu; do not pass project type names with it.' }
 if (-not $ProjectType) {
     if ([Console]::IsInputRedirected -or -not [Environment]::UserInteractive) {
         throw 'The menu requires an interactive terminal. Pass project type names instead, for example: .\.template\project-types\SetProjectType.ps1 node web -WhatIf'
     }
     $available = @(Get-ChildItem -LiteralPath $types -Directory -Force | Sort-Object Name | ForEach-Object { $_.Name })
-    $ProjectType = @(Read-ProjectTypeSelection $available)
+    $ProjectType = @(Read-ProjectTypeSelection $available -SelectOnly:$SelectOnly)
+    if ($SelectOnly) {
+        if (-not $ProjectType.Count) { Write-Host 'No project types selected.' }
+        return $ProjectType
+    }
     if (-not $ProjectType.Count) { Write-Host 'Cancelled; no files changed.'; return }
 }
 

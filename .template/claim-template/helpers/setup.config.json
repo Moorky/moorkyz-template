@@ -1,7 +1,7 @@
 {
-  "projectName": "The Project",
-  "displayName": "The Project",
+  "projectName": "",
+  "displayName": "",
   "githubOwner": "Moorky",
-  "projectTypes": "selected at CreateProject.ps1",
+  "projectTypes": [],
   "remove": []
 }

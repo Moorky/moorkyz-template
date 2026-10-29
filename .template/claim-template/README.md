@@ -14,16 +14,21 @@ configuration and use `-WhatIf` before authorizing changes.
 
 | Setting | Meaning |
 |---|---|
-| `projectName` | Repository/package name: lowercase letters, digits and single hyphens, e.g. `my-app`. Replaces the template placeholder everywhere. |
-| `displayName` | Human-readable title for `README.md`, e.g. `My App`. |
+| `projectName` | Repository/package name: lowercase letters, digits and single hyphens, e.g. `my-app`. Replaces the template placeholder everywhere. Ships empty. |
+| `displayName` | Human-readable title for `README.md`, e.g. `My App`. Ships empty. |
 | `githubOwner` | GitHub user or organization that owns the repository. |
-| `projectTypes` | Starters to copy from `.template/project-types/helpers/types/`, e.g. `["node", "web"]`. Leave empty for none; more can be added later. |
-| `remove` | Explicit template-only paths to delete permanently. Nothing unlisted is removed. Retain maintenance checkups and never use existing runtime data as a test fixture. |
+| `projectTypes` | JSON array of starters to copy from `.template/project-types/helpers/types/`, e.g. `["node", "web"]`. Ships as `[]` (none); more can be added later. |
+| `remove` | JSON array of template-only paths to delete permanently. Nothing unlisted is removed. A path is refused while a remaining file links to or mentions it, and `.audits` cannot be removed. Retain maintenance checkups and never use existing runtime data as a test fixture. |
 
 The script refuses to change anything until `projectName` and `displayName` are
-set and every value is valid; it lists what is missing. The shipped `projectTypes`
-text is a placeholder: replace it with `[]` or a list of type names. The script does
-not prompt for types.
+set and every value is valid; it lists what is missing. Lists must be JSON arrays:
+placeholder text in a typed field is rejected.
+
+With `projectTypes` empty, an interactive run asks whether to choose types in the
+existing project-type menu (`SetProjectType.ps1 -SelectOnly`): select several or
+none. The choice is validated like a hand-written configuration and saved to
+`setup.config.json` when you confirm the plan, so creation stays
+configuration-driven. `-Yes`, `-WhatIf` and redirected input never prompt.
 
 See the [preset guide](../project-types/README.md) for all available types and
 tool-package requirements. On Windows, [SetProjectType.cmd](../project-types/SetProjectType.cmd)
@@ -31,25 +36,41 @@ also lets you select and add more types later without removing any starters.
 
 ## 2. Run `CreateProject.ps1`
 
-Right-click it and choose Run with PowerShell, or:
+Claim a fresh clone of the template before pointing its `origin` at the new
+repository, so the script can read the template commit from Git. Right-click
+it and choose Run with PowerShell, or:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File ".template\claim-template\CreateProject.ps1" -WhatIf
 powershell -ExecutionPolicy Bypass -File ".template\claim-template\CreateProject.ps1"
 ```
 
-For a no-op entrypoint check without valid setup configuration or any prompts,
-pass `-DryRun`. See [maintenance checkups](../maintenance/README.md).
+For a copy without the template's Git history (for example a ZIP download or
+GitHub's *Use this template*), add `-TemplateCommit <full SHA>` with the template
+commit you copied. For a no-op entrypoint check without valid setup configuration
+or any prompts, pass `-DryRun`. See [maintenance checkups](../maintenance/README.md).
 
 `-WhatIf` only previews. Otherwise the script shows its plan and asks before it:
 
 1. copies the selected project types to the repository root, never overwriting different files;
 2. deletes the `remove` paths;
-3. replaces the project placeholder and template GitHub owner in text files (`.audits/` history and this folder stay unchanged);
-4. sets the README title and regenerates `README.html` (needs Node.js).
+3. on the first adoption, starts the project's own audit trail: the template's
+   audit records are not inherited, the request ledger and work queue keep only
+   their example rows, links to template audit records point to the template commit
+   on GitHub, and `.audits/` gets a clean README plus an adoption record with the
+   template repository, version, commit SHA and the results below;
+4. replaces the project placeholder and template GitHub owner in text files
+   (`.audits/`, commit-pinned template links and this folder stay unchanged);
+5. sets the README title and regenerates `README.html` and the design README
+   editions (needs Node.js);
+6. validates every internal Markdown/HTML link. Broken links are listed and the
+   run ends with an error; fix them and run the script again. Until a run passes,
+   each rerun records its result in the adoption record, so the committed record
+   matches the committed files.
 
 It always ends with "Press any key to continue". This is a one-time adoption
 tool, not routine maintenance; rerunning is safe if adoption needs to be retried.
-Keep this folder after adoption: retained audits, the tool catalog, guides and the
-README editions link to it, and the storage checkup exercises it, so deleting it
-alone fails the maintenance checks.
+Reruns leave an existing project audit trail and work queue unchanged. Keep this
+folder after adoption: guides and the README editions link to it, so deleting it
+alone fails the link checks. The [adoption checkup](../maintenance/helpers/checkups/09-claim-template.ps1)
+exercises all of this in disposable copies.

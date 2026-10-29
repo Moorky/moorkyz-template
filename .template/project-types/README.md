@@ -70,6 +70,9 @@ partial additions; resolve the reported error before retrying.
 Alternatively set `"projectTypes": ["node", "web"]` in
 [setup.config.json](../claim-template/helpers/setup.config.json) and run
 [CreateProject.ps1](../claim-template/CreateProject.ps1) when claiming a template copy.
+With an empty list, an interactive claim offers this same menu through
+`SetProjectType.ps1 -SelectOnly`, which only returns the confirmed names (none when
+quit) and copies nothing; the claim validates and saves them in its configuration.
 The old `overlay` setting is no longer accepted.
 
 ## Tool packages

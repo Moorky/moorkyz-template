@@ -67,8 +67,8 @@ Nothing is written to log files.
   validation, exact byte/age boundaries, oldest/largest ordering, protected/live
   archives, non-ZIP/link preservation, disk-space safeguards, log rotation and
   explicit CLI warnings using disposable archives. It also checks the root
-  `docs/AUDIT_TEMPLATE.md` template, report generation in `.audits/` and history
-  preservation during project adoption. No cleanup targets existing data.
+  `docs/AUDIT_TEMPLATE.md` template and report generation in `.audits/`.
+  No cleanup targets existing data.
 - [06-design-collection.ps1](helpers/checkups/06-design-collection.ps1) verifies
   exactly twenty complete README editions, twenty distinct landings and the
   final showcase, including generated freshness, unchanged README text, local
@@ -97,6 +97,19 @@ real COM targets, arguments, working directories and icon properties, supplied
 ICO integrity, source preservation, inventories, safe modes and conflict/link
 refusal. Non-Windows hosts check the explicit unsupported-platform error and
 skip Windows COM assertions. No existing launchers or file associations change.
+
+- [09-claim-template.ps1](helpers/checkups/09-claim-template.ps1) verifies one-time
+  adoption in disposable full copies of the template: the shipped configuration has
+  no placeholder text and typed lists; invalid values, missing provenance, short
+  commit SHAs, still-referenced removals and removing `.audits` are refused without
+  changes. A Git clone flow on each available PowerShell host checks provenance
+  detection, the clean audit trail (no template records, example-only work queue,
+  adoption record, clean audit README), commit-pinned evidence links, owner and
+  title replacement, regenerated README editions, the adopted copy's own
+  documentation check, and unchanged reruns. It also covers manual `-TemplateCommit`
+  provenance, broken-link reporting and its passing rerun in the adoption record,
+  the select-only project-type menu with simulated keys, and that a generated
+  configuration passes validation.
 
 ## Safe modes
 

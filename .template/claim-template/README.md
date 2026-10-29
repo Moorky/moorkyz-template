@@ -18,7 +18,7 @@ configuration and use `-WhatIf` before authorizing changes.
 | `displayName` | Human-readable title for `README.md`, e.g. `My App`. Ships empty. |
 | `githubOwner` | GitHub user or organization that owns the repository. |
 | `projectTypes` | JSON array of starters to copy from `.template/project-types/helpers/types/`, e.g. `["node", "web"]`. Ships as `[]` (none); more can be added later. |
-| `remove` | JSON array of template-only paths to delete permanently. Nothing unlisted is removed. A path is refused while a remaining file links to or mentions it, and `.audits` cannot be removed. Retain maintenance checkups and never use existing runtime data as a test fixture. |
+| `remove` | JSON array of template-only paths to delete permanently. Nothing unlisted is removed. A path is refused while a remaining file links to, mentions or names it (Markdown, HTML, CSS, scripts, JSON, YAML, PowerShell, batch files and Dockerfiles are checked), and `.audits` cannot be removed. Retain maintenance checkups and never use existing runtime data as a test fixture. |
 
 The script refuses to change anything until `projectName` and `displayName` are
 set and every value is valid; it lists what is missing. Lists must be JSON arrays:
@@ -36,19 +36,29 @@ also lets you select and add more types later without removing any starters.
 
 ## 2. Run `CreateProject.ps1`
 
-Claim a fresh clone of the template before pointing its `origin` at the new
-repository, so the script can read the template commit from Git. Right-click
-it and choose Run with PowerShell, or:
+Right-click it and choose Run with PowerShell, or:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File ".template\claim-template\CreateProject.ps1" -WhatIf
 powershell -ExecutionPolicy Bypass -File ".template\claim-template\CreateProject.ps1"
 ```
 
-For a copy without the template's Git history (for example a ZIP download or
-GitHub's *Use this template*), add `-TemplateCommit <full SHA>` with the template
-commit you copied. For a no-op entrypoint check without valid setup configuration
-or any prompts, pass `-DryRun`. See [maintenance checkups](../maintenance/README.md).
+The first adoption finds the template commit the copy started from and verifies it
+in the [template repository](https://github.com/Moorky/moorkyz-template); it never
+guesses. Git and network access are needed for this one step:
+
+| Copy | How the commit is found |
+|---|---|
+| Clone of the template, also after changing `origin` or adding commits | The newest template commit in the copy's Git history |
+| Repository created with GitHub's *Use this template* | The template commit whose files equal the copy's first commit |
+| ZIP download from GitHub | The commit GitHub writes into `helpers/template-commit.txt` |
+| Anything else | Pass `-TemplateCommit <full SHA>`; it must exist in the template repository |
+
+The version is the release tag (for example `v1.0.0`) or, for other commits, the
+development build with its distance from the last release. Node.js comes from the
+[run tool](../run/README.md), which may offer a verified download once. For a no-op
+entrypoint check without valid setup configuration or any prompts, pass `-DryRun`.
+See [maintenance checkups](../maintenance/README.md).
 
 `-WhatIf` only previews. Otherwise the script shows its plan and asks before it:
 
@@ -62,15 +72,15 @@ or any prompts, pass `-DryRun`. See [maintenance checkups](../maintenance/README
 4. replaces the project placeholder and template GitHub owner in text files
    (`.audits/`, commit-pinned template links and this folder stay unchanged);
 5. sets the README title and regenerates `README.html` and the design README
-   editions (needs Node.js);
-6. validates every internal Markdown/HTML link. Broken links are listed and the
-   run ends with an error; fix them and run the script again. Until a run passes,
-   each rerun records its result in the adoption record, so the committed record
-   matches the committed files.
+   editions;
+6. validates links and literal paths in docs, configuration and source files.
+   Broken references are listed and the run ends with an error; fix them and run
+   the script again. Until a run passes, each rerun records its result in the
+   adoption record, so the committed record matches the committed files.
 
 It always ends with "Press any key to continue". This is a one-time adoption
 tool, not routine maintenance; rerunning is safe if adoption needs to be retried.
 Reruns leave an existing project audit trail and work queue unchanged. Keep this
 folder after adoption: guides and the README editions link to it, so deleting it
-alone fails the link checks. The [adoption checkup](../maintenance/helpers/checkups/09-claim-template.ps1)
-exercises all of this in disposable copies.
+alone fails the reference checks. The [template integrity checkup](../maintenance/helpers/checkups/09-template-integrity.ps1)
+exercises all of this in disposable copies, against a disposable upstream.

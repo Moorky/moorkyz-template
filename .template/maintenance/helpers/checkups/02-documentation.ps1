@@ -47,22 +47,8 @@ function exactPath(filename) {
   return true;
 }
 
-const errors = [];
 const sources = files(root);
-for (const filename of sources.filter((name) => /\.(md|html)$/i.test(name))) {
-  const source = fs.readFileSync(filename, "utf8");
-  const pattern = filename.endsWith(".html") ? /(?:href|src)=["']([^"']+)["']/g :
-    /!?\[[^\]]*\]\((?:<([^>]+)>|([^)\s]+))(?:\s+"[^"]*")?\)/g;
-  for (const match of source.matchAll(pattern)) {
-    const target = match[1] || match[2];
-    if (/^[a-z][a-z0-9+.-]*:|^#|^\/\//i.test(target)) continue;
-    const local = decodeURIComponent(target.split(/[?#]/)[0]);
-    if (!exactPath(path.resolve(path.dirname(filename), local)))
-      errors.push(`${path.relative(root, filename)}: ${target}`);
-  }
-}
-assert.deepEqual(errors, [], `Broken or incorrectly cased links:\n${errors.join("\n")}`);
-console.log("PASS: all local Markdown/HTML links exist with exact filename casing.");
+// Links and literal paths are validated by the shared reference engine in 09-template-integrity.ps1.
 const markdown = fs.readFileSync(path.join(root, "README.md"), "utf8");
 assert.equal(fs.readFileSync(path.join(root, "README.html"), "utf8"), renderReadme(markdown),
   "README.html is stale; run node moorkyz readme");
@@ -81,6 +67,7 @@ const toolEntrypoints = {
   "claim-template": ["CreateProject.ps1"],
   maintenance: ["RunCheckups.ps1"],
   "project-types": ["SetProjectType.ps1", "SetProjectType.cmd"],
+  run: ["Run.ps1"],
   "script-icons": ["SetScriptIcons.ps1"],
   "soft-copy": ["CopyTemplate.ps1"],
 };
@@ -100,7 +87,10 @@ for (const file of ["AGENTS.md", "README.md"]) {
     `${file} must point agents and users to the template-tool catalog.`);
 }
 assert.ok(exactPath(path.join(root, "moorkyz")), "The CLI must remain at the repository root.");
-console.log(`PASS: all ${Object.keys(toolEntrypoints).length} tool folders have adjacent entrypoints/README, helpers are nested, root CLI is preserved, and template-tool discovery is documented.`);
+const launcher = fs.readFileSync(path.join(root, "RUN.cmd"), "utf8");
+assert.match(launcher, /%~dp0\.template\\run\\Run\.ps1/, "RUN.cmd must stay a thin launcher for .template/run/Run.ps1.");
+assert.ok(launcher.includes("\r\n") && !/[^\r]\n/.test(launcher), "RUN.cmd needs CRLF line endings.");
+console.log(`PASS: all ${Object.keys(toolEntrypoints).length} tool folders have adjacent entrypoints/README, helpers are nested, the root CLI and RUN.cmd launcher are preserved, and template-tool discovery is documented.`);
 assert.ok(!fs.existsSync(path.join(root, "READM.html")), "Retired duplicate READM.html must not return.");
 const cli = fs.readFileSync(cliPath, "utf8");
 assert.doesNotMatch(cli, /require\(["']\.\.?\//, "The portable CLI must not depend on local helpers.");

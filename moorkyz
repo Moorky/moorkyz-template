@@ -909,6 +909,7 @@ const ROOT = process.cwd();
 const STATE = path.join(ROOT, ".moorkyz");
 const DEFAULT = "default";
 const DEFAULT_URL = "http://localhost:3000";
+const STATIC_URL = "http://127.0.0.1:4173";
 const NAME_RE = /^[a-zA-Z][a-zA-Z0-9_-]{0,50}$/;
 const SCRIPT_RE = /^[a-zA-Z0-9][a-zA-Z0-9:_./-]*$/;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -923,7 +924,7 @@ function die(message, code = 1) {
 function info(message) {
   console.log(message);
 }
-function openBrowser(url) {
+function openBrowser(url, quiet = false) {
   if (process.env.CI || !process.stdout.isTTY) return;
   const command =
     process.platform === "win32"
@@ -940,7 +941,17 @@ function openBrowser(url) {
     info(`Could not open ${url} in the default browser: ${error.message}`);
   });
   browser.unref();
-  info(`Opening ${url} in the default browser.`);
+  if (!quiet) info(`Opening ${url} in the default browser.`);
+}
+function portArguments(project, scriptText, port) {
+  const portArgs =
+    project.portArgs ??
+    (/\bvite\b/.test(scriptText)
+      ? ["--port", "{port}", "--host", "127.0.0.1", "--strictPort"]
+      : /\bastro\b/.test(scriptText)
+        ? ["--port", "{port}", "--host", "127.0.0.1"]
+        : []);
+  return portArgs.map((value) => value.replaceAll("{port}", String(port)));
 }
 // Windows resolves package managers to .cmd shims, which require a shell.
 // Spawn cmd.exe explicitly instead of using shell: true, which concatenates arguments (DEP0190).
@@ -1152,6 +1163,29 @@ function cfg() {
     const prod = settings.prod ?? "start";
     if (![dev, prod].every((s) => typeof s === "string" && SCRIPT_RE.test(s)))
       die(`Invalid script name for '${name}'.`);
+    const served = settings.static == null ? null : folderFor(settings.static);
+    const open = settings.open ?? "index.html";
+    if (
+      served &&
+      (typeof open !== "string" ||
+        path.isAbsolute(open) ||
+        open.split(/[\\/]/).some((part) => !part || part === ".." || part.startsWith(".")))
+    )
+      die(`open for '${name}' must name a file inside its static folder, such as "index.html".`);
+    const checks = settings.checks ?? null;
+    if (
+      checks != null &&
+      (!Array.isArray(checks) ||
+        checks.length > 20 ||
+        !checks.every(
+          (argv) =>
+            Array.isArray(argv) &&
+            argv.length > 0 &&
+            argv.length <= 50 &&
+            argv.every((part) => typeof part === "string" && part.length > 0 && !part.includes("\0")),
+        ))
+    )
+      die(`checks for '${name}' must be a list of commands, each an array such as ["node", "website/verify.mjs"].`);
     const portArgs = settings.portArgs;
     if (
       portArgs != null &&
@@ -1179,9 +1213,12 @@ function cfg() {
       cwd,
       dev,
       prod,
-      url: projectUrl(settings.url, name),
+      url: projectUrl(settings.url ?? (served ? STATIC_URL : undefined), name),
       portArgs,
       startupTimeoutMs,
+      static: served,
+      open: served ? open : null,
+      checks,
     };
   }
   const defaultProject =
@@ -1481,17 +1518,10 @@ function worker(argv) {
   try {
     // Project/script names are constrained and taken from local config; no raw shell arguments.
     const scriptText = packageScripts(project)[project[mode]];
-    const portArgs =
-      project.portArgs ??
-      (/\bvite\b/.test(scriptText)
-        ? ["--port", "{port}", "--host", "127.0.0.1", "--strictPort"]
-        : /\bastro\b/.test(scriptText)
-          ? ["--port", "{port}", "--host", "127.0.0.1"]
-        : []);
     const { command, argv } = scriptInvocation(
       project,
       project[mode],
-      portArgs.map((value) => value.replaceAll("{port}", String(state.port))),
+      portArguments(project, scriptText, state.port),
     );
     child = spawn(command, argv, {
       cwd: project.cwd,
@@ -1615,6 +1645,8 @@ function connectable(port, host) {
 }
 async function startOne(project, mode, config) {
   const name = project.name;
+  if (project.static)
+    die(`'${name}' is a static preview; run 'moorkyz up ${name}' to check and serve it in the foreground.`);
   const script = project[mode];
   if (!hasScript(packageScripts(project), script))
     die(`${name}: package.json does not declare '${script}'.`);
@@ -1876,9 +1908,838 @@ function listProjects(config) {
   for (const project of Object.values(config.projects)) {
     const url = runtimeUrl(project, running(project.name));
     info(
-      `${project.name}${config.defaultProject === project.name ? " (default)" : ""}: ${path.relative(ROOT, project.cwd) || "."} — dev:${project.dev} prod:${project.prod} — URL: ${url}`,
+      `${project.name}${config.defaultProject === project.name ? " (default)" : ""}: ${path.relative(ROOT, project.cwd) || "."} — ${project.static != null ? `static preview of ${path.relative(ROOT, project.static) || "."}` : `dev:${project.dev} prod:${project.prod}`} — URL: ${url}`,
     );
   }
+}
+// ---------------------------------------------------------------------------
+// References: literal file references in documentation, configuration and
+// source files. Dynamic expressions are counted as limitations, never guessed.
+const REFERENCE_SKIP = new Set([".git", ".moorkyz", ".logs", ".archive",
+  "node_modules", "coverage", "dist", "build", "tmp", ".tmp"]);
+const REFERENCE_BINARY = /\.(?:png|jpe?g|gif|webp|avif|ico|icns|woff2?|ttf|otf|eot|pdf|zip|gz|tgz|7z|exe|dll|lnk|mp[34]|webm|wav)$/i;
+const REFERENCE_TEST = /(?:^|\/)(?:checkups|tests?|__tests__|fixtures)\/|\.(?:test|spec)\.[cm]?[jt]sx?$/i;
+const MARKDOWN_LINK = /!?\[[^\]]*\]\((?:<([^>]+)>|([^)\s]+))(?:\s+"[^"]*")?\)/g;
+const HTML_LINK = /(?:href|src)=["']([^"']+)["']/g;
+
+function referenceKind(relative, head) {
+  if (/\.(?:md|markdown)$/i.test(relative)) return "markdown";
+  if (/\.html?$/i.test(relative)) return "html";
+  if (/\.css$/i.test(relative)) return "css";
+  if (/\.(?:[cm]?[jt]s|jsx|tsx)$/i.test(relative)) return "script";
+  if (/\.(?:json|jsonc|webmanifest)$/i.test(relative)) return "json";
+  if (/\.ya?ml$/i.test(relative)) return "yaml";
+  if (/\.(?:ps1|psm1|psd1)$/i.test(relative)) return "powershell";
+  if (/\.(?:cmd|bat)$/i.test(relative)) return "batch";
+  if (/(?:^|\/)Dockerfile$|\.dockerfile$/i.test(relative)) return "dockerfile";
+  if (!path.extname(relative) && /^#!.*\bnode\b/.test(head)) return "script";
+  return null;
+}
+function lineIndex(text) {
+  const starts = [0];
+  for (let i = 0; i < text.length; i++) if (text[i] === "\n") starts.push(i + 1);
+  return (offset) => {
+    let low = 0;
+    let high = starts.length - 1;
+    while (low < high) {
+      const middle = (low + high + 1) >> 1;
+      if (starts[middle] <= offset) low = middle;
+      else high = middle - 1;
+    }
+    return low + 1;
+  };
+}
+// String literals of C-like and PowerShell sources, skipping comments.
+function stringLiterals(text, language) {
+  const literals = [];
+  const powershell = language === "powershell";
+  let i = 0;
+  let previous = "";
+  while (i < text.length) {
+    const c = text[i];
+    const next = text[i + 1];
+    if (powershell && c === "<" && next === "#") {
+      const end = text.indexOf("#>", i + 2);
+      i = end < 0 ? text.length : end + 2;
+    } else if (powershell && c === "#") {
+      while (i < text.length && text[i] !== "\n") i++;
+    } else if (!powershell && c === "/" && next === "/") {
+      while (i < text.length && text[i] !== "\n") i++;
+    } else if (!powershell && c === "/" && next === "*") {
+      const end = text.indexOf("*/", i + 2);
+      i = end < 0 ? text.length : end + 2;
+    } else if (!powershell && c === "/" && /^$|[(,=:[!&|?{};+\-*%<>~^]$/.test(previous)) {
+      // A regular expression literal; skip it, including character classes.
+      let j = i + 1;
+      let inClass = false;
+      while (j < text.length && text[j] !== "\n") {
+        if (text[j] === "\\") j++;
+        else if (text[j] === "[") inClass = true;
+        else if (text[j] === "]") inClass = false;
+        else if (text[j] === "/" && !inClass) break;
+        j++;
+      }
+      i = j + 1;
+      previous = "/";
+    } else if (powershell && c === "@" && (next === "'" || next === '"') && /^\r?\n/.test(text.slice(i + 2, i + 4))) {
+      const close = next === "'" ? "\n'@" : '\n"@';
+      const start = text.indexOf("\n", i) + 1;
+      const end = text.indexOf(close, start);
+      const body = text.slice(start, end < 0 ? text.length : end);
+      for (const inner of stringLiterals(body, "script"))
+        literals.push({ ...inner, index: inner.index + start });
+      i = end < 0 ? text.length : end + close.length;
+      previous = "'";
+    } else if (c === "'" || c === '"' || (c === "`" && !powershell)) {
+      let j = i + 1;
+      let value = "";
+      let dynamic = false;
+      while (j < text.length) {
+        const d = text[j];
+        if (powershell && c === "'" && d === "'" && text[j + 1] === "'") { value += "'"; j += 2; continue; }
+        if (powershell && c === '"' && d === "`") { value += text[j + 1] ?? ""; j += 2; continue; }
+        if (!powershell && d === "\\") { value += text[j + 1] ?? ""; j += 2; continue; }
+        if (d === c) break;
+        if ((c === "`" && d === "$" && text[j + 1] === "{") || (powershell && c === '"' && d === "$")) dynamic = true;
+        if (d === "\n" && c !== "`") break;
+        value += d;
+        j++;
+      }
+      literals.push({ value, index: i, dynamic });
+      i = j + 1;
+      previous = c;
+    } else {
+      if (!/\s/.test(c)) previous = c;
+      i++;
+    }
+  }
+  return literals;
+}
+function referenceToken(raw) {
+  let token = raw.trim().replace(/^[("'([]+|[)"',;:\]]+$/g, "");
+  const option = /^--?[\w-]+=(.+)$/.exec(token);
+  if (option) token = option[1];
+  return token.split(/[?#]/)[0];
+}
+function pathLiteral(token, single = false) {
+  return token.length > 0 && token.length < 400 &&
+    !/^[a-z][a-z0-9+.-]*:/i.test(token) && !/^[\\/]/.test(token) &&
+    !/[*?<>|{}[\]$%`"'\s]|^-|\.\.\.|\/\/|\\\\/.test(token) &&
+    !/^(?:\.{1,2}(?:[\\/]|$))+$/.test(token) && (single || /[\\/]/.test(token));
+}
+// Interpolated text counts as a dynamic path only when it reads like one.
+function dynamicPath(value) {
+  const text = value.replace(/\$\{[^}]*\}|\$\([^)]*\)|\$\{?[\w:]+\}?|%[\w~]+%?/g, "x").trim();
+  return /[\\/]/.test(text) && !/\s/.test(text) && !/:\/\//.test(text);
+}
+const ROOT_BASES = /^(?:\$(?:root|repoRoot|repositoryRoot)|root|ROOT|repoRoot|repositoryRoot)$/i;
+const FILE_BASES = /^(?:\$PSScriptRoot|__dirname|import\.meta\.dirname)$/i;
+function scanReferences(root, options = {}) {
+  const exactNames = new Map();
+  const namesOf = (directory) => {
+    if (!exactNames.has(directory)) {
+      let names = null;
+      try { names = new Set(fs.readdirSync(directory)); } catch { names = null; }
+      exactNames.set(directory, names);
+    }
+    return exactNames.get(directory) || new Set();
+  };
+  const exact = (filename) => {
+    const relative = path.relative(root, filename);
+    if (!relative) return true;
+    if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) return false;
+    let directory = root;
+    for (const part of relative.split(path.sep).filter(Boolean)) {
+      if (!namesOf(directory).has(part)) return false;
+      directory = path.join(directory, part);
+    }
+    return true;
+  };
+  const rootNames = namesOf(root);
+  const removing = (options.removing || []).map((entry) => path.resolve(root, entry));
+  const insideRemoved = (filename) => removing.some((target) =>
+    filename === target || filename.startsWith(target + path.sep));
+  const files = [];
+  (function walk(directory) {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      if (REFERENCE_SKIP.has(entry.name) || entry.isSymbolicLink()) continue;
+      const filename = path.join(directory, entry.name);
+      if (entry.isDirectory()) walk(filename);
+      else if (entry.isFile() && !REFERENCE_BINARY.test(entry.name)) files.push(filename);
+    }
+  })(root);
+  const result = { files: 0, checked: 0, broken: [], removed: [], unverified: [], fixtureFiles: 0 };
+  const mentionPatterns = removing.map((target) => {
+    const relative = path.relative(root, target).split(path.sep).map((part) =>
+      part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[/\\\\]");
+    const directory = fs.existsSync(target) && fs.statSync(target).isDirectory();
+    return new RegExp(`(?<![\\w.\\-/\\\\])(?:\\.{1,2}[/\\\\])*${relative}${directory ? "[/\\\\]" : "(?![\\w.\\-])"}`, "g");
+  });
+  const removedNames = new Set(removing.map((target) => path.relative(root, target).split(path.sep).join("/")));
+  for (const filename of files) {
+    const relative = path.relative(root, filename).split(path.sep).join("/");
+    let text;
+    try {
+      if (fs.statSync(filename).size > 5 * 1024 * 1024) continue;
+      const bytes = fs.readFileSync(filename);
+      if (bytes.includes(0)) continue;
+      text = bytes.toString("utf8");
+    } catch {
+      continue;
+    }
+    const kind = referenceKind(relative, text.slice(0, 200));
+    if (!kind && !removing.length) continue;
+    const history = relative.startsWith(".audits/") || relative === "AGENT_SCHEDULER.md";
+    const skipRemoval = history || insideRemoved(filename);
+    const fixture = REFERENCE_TEST.test(relative) && !["markdown", "html", "css"].includes(kind);
+    const lineAt = lineIndex(text);
+    const directory = path.dirname(filename);
+    const directoryNames = namesOf(directory);
+    const handled = new Set();
+    if (kind) result.files++;
+    if (fixture && kind) result.fixtureFiles++;
+    const report = (offset, target, candidates, syntax) => {
+      result.checked++;
+      const found = candidates.filter(exact);
+      if (!found.length) {
+        result.broken.push({ file: relative, line: lineAt(offset), target, syntax });
+        return;
+      }
+      if (removing.length && !skipRemoval && found.some(insideRemoved))
+        result.removed.push({ file: relative, line: lineAt(offset), target, reason: syntax });
+    };
+    const unverified = (offset, value, reason) => {
+      if (!fixture) result.unverified.push({ file: relative, line: lineAt(offset), text: value.trim().slice(0, 120), reason });
+    };
+    const link = (offset, target) => {
+      if (/^[a-z][a-z0-9+.-]*:|^#|^\/\//i.test(target) || /\$\{|\{\{/.test(target)) return;
+      let local = target.split(/[?#]/)[0];
+      if (!local) return;
+      try { local = decodeURIComponent(local); } catch { /* keep the raw target */ }
+      report(offset, target, [path.resolve(directory, local)], "link");
+    };
+    // base: "root" or "file" when known, "unknown" for other bases, null for free-standing literals.
+    const literal = (offset, raw, base = null, syntax = "path") => {
+      if (fixture) return;
+      const token = referenceToken(raw);
+      if (!pathLiteral(token, base === "root" || base === "file")) return;
+      if (base === "unknown") {
+        if (/[\\/]/.test(token)) unverified(offset, token, "relative to a base that is not the repository");
+        return;
+      }
+      const local = token.replace(/\\/g, "/");
+      const first = local.replace(/^(?:\.\/)+/, "").split("/")[0];
+      if (REFERENCE_SKIP.has(first)) return;
+      if (kind === "script" && base === null && /^\.{1,2}\//.test(local)) {
+        unverified(offset, token, "relative to an unknown base");
+        return;
+      }
+      const candidates = [];
+      if (base !== "file" && first !== ".." && rootNames.has(first)) candidates.push(path.resolve(root, local));
+      if (base !== "root" && (first === ".." || directoryNames.has(first))) candidates.push(path.resolve(directory, local));
+      if (candidates.length) report(offset, token, candidates, syntax);
+    };
+    const baseKind = (expression) => ROOT_BASES.test(expression) ? "root" : FILE_BASES.test(expression) ? "file" : "unknown";
+    if (kind === "markdown") {
+      for (const match of text.matchAll(MARKDOWN_LINK)) link(match.index, match[1] || match[2]);
+    } else if (kind === "html") {
+      for (const match of text.matchAll(HTML_LINK)) link(match.index, match[1]);
+    } else if (kind === "css") {
+      for (const match of text.matchAll(/url\(\s*(['"]?)([^'")]+)\1\s*\)|@import\s+(['"])([^'"]+)\3/g))
+        link(match.index, match[2] || match[4]);
+    } else if (kind === "script") {
+      for (const match of text.matchAll(/\b(?:from|import)\s*\(?\s*(['"])(\.{1,2}\/[^'"\n]+)\1|\brequire(?:\.resolve)?\s*\(\s*(['"])(\.{1,2}\/[^'"\n]+)\3|\bnew\s+URL\s*\(\s*(['"])(\.{1,2}\/[^'"\n]+)\5\s*,\s*import\.meta\.url|\bcreateRequire\s*\(\s*import\.meta\.url\s*\)\s*\(\s*(['"])(\.{1,2}\/[^'"\n]+)\7/g)) {
+        const target = match[2] || match[4] || match[6] || match[8];
+        link(match.index, target);
+        handled.add(match.index + match[0].indexOf(target) - 1);
+      }
+      for (const match of text.matchAll(/\b(?:require|import)\s*\(\s*(?!['"`)\s])[^)\n]{0,80}/g))
+        if (!fixture) result.unverified.push({ file: relative, line: lineAt(match.index), text: match[0].slice(0, 120), reason: "dynamic" });
+      for (const match of text.matchAll(/\bpath\.(?:join|resolve)\s*\(([^()\n]*(?:\([^()\n]*\)[^()\n]*)*)\)/g)) {
+        const args = match[1].split(",").map((arg) => arg.trim());
+        const parts = [];
+        let cursor = match.index + match[0].indexOf("(") + 1;
+        let complete = true;
+        for (const [position, arg] of args.entries()) {
+          const at = text.indexOf(arg, cursor);
+          cursor = at + arg.length;
+          if (position === 0) continue;
+          const quoted = /^(['"])([^'"]*)\1$/.exec(arg);
+          if (!quoted) { complete = false; break; }
+          parts.push(quoted[2]);
+          handled.add(at);
+        }
+        if (parts.length && !parts.includes("..")) literal(match.index, parts.join("/"), baseKind(args[0]), "join");
+        if (!complete) unverified(match.index, match[0], "dynamic");
+      }
+      for (const item of stringLiterals(text, "script")) {
+        if (handled.has(item.index)) continue;
+        if (item.dynamic) { if (dynamicPath(item.value)) unverified(item.index, item.value, "dynamic"); }
+        else literal(item.index, item.value);
+      }
+    } else if (kind === "powershell") {
+      for (const match of text.matchAll(/\bJoin-Path\s+(?:-Path\s+)?(\$[\w:]+|\([^()\n]*\))\s+(?:-ChildPath\s+)?('((?:[^'\n]|'')*)'|"([^"\n]*)"|\$[\w:]+)/gi)) {
+        const childAt = match.index + match[0].lastIndexOf(match[2]);
+        handled.add(childAt);
+        if (match[3] != null) literal(childAt, match[3].replace(/''/g, "'"), baseKind(match[1]), "join");
+        else if (match[4] != null && !/\$/.test(match[4])) literal(childAt, match[4], baseKind(match[1]), "join");
+        else unverified(match.index, match[0], "dynamic");
+      }
+      for (const item of stringLiterals(text, "powershell")) {
+        if (handled.has(item.index)) continue;
+        if (item.dynamic) { if (dynamicPath(item.value)) unverified(item.index, item.value, "dynamic"); }
+        else literal(item.index, item.value);
+      }
+    } else if (kind === "json" || kind === "yaml" || kind === "batch") {
+      const strings = [];
+      if (kind === "json") {
+        for (const match of text.matchAll(/"((?:[^"\\\n]|\\.)*)"/g))
+          strings.push({ value: match[1].replace(/\\(["\\/])/g, "$1"), index: match.index });
+      } else {
+        let offset = 0;
+        for (const line of text.split("\n")) {
+          const content = kind === "yaml" ? line.replace(/(^|\s)#.*$/, "") : /^\s*(?:@?rem\b|::)/i.test(line) ? "" : line;
+          strings.push({ value: content, index: offset });
+          offset += line.length + 1;
+        }
+      }
+      for (const item of strings) {
+        if (kind === "batch") {
+          for (const match of item.value.matchAll(/%~dp0([^\s"%]+)/gi))
+            report(item.index + match.index, match[0], [path.resolve(directory, match[1].replace(/\\/g, "/"))], "batch");
+        }
+        // Keep expressions such as ${{ github.sha }} in one token.
+        for (const token of item.value.replace(/%~dp0[^\s"%]+/gi, " ").replace(/\$\{\{[^}]*\}\}/g, "${{x}}").split(/[\s"'=]+/)) {
+          if (/\$\{\{|%[A-Za-z_]\w*%|\$\(|\$[A-Za-z_]/.test(token)) { if (dynamicPath(token)) unverified(item.index, token, "dynamic"); }
+          else literal(item.index, token);
+        }
+      }
+    } else if (kind === "dockerfile") {
+      for (const match of text.matchAll(/^\s*(?:COPY|ADD)\s+(.+)$/gim)) {
+        const args = match[1].trim().split(/\s+/);
+        if (args.some((arg) => /^--from=/i.test(arg))) continue;
+        for (const source of args.filter((arg) => !arg.startsWith("--")).slice(0, -1))
+          report(match.index, source, [path.resolve(root, source), path.resolve(directory, source)], "copy");
+      }
+    }
+    if (removing.length && !skipRemoval && !relative.startsWith(".template/claim-template/")) {
+      // The adoption tool handles optional paths itself; its own mentions never block a removal.
+      for (const pattern of mentionPatterns)
+        for (const match of text.matchAll(pattern))
+          result.removed.push({ file: relative, line: lineAt(match.index), target: match[0], reason: "mention" });
+      if (kind && !["markdown", "html", "css"].includes(kind))
+        for (const item of stringLiterals(text, kind === "powershell" ? "powershell" : "script"))
+          if (removedNames.has(item.value.replace(/\\/g, "/").replace(/^\.\//, "")))
+            result.removed.push({ file: relative, line: lineAt(item.index), target: item.value, reason: "name" });
+    }
+  }
+  const seen = new Set();
+  result.removed = result.removed.filter((entry) => {
+    const key = `${entry.file}:${entry.line}:${entry.target}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return result;
+}
+function referencesCommand(args) {
+  const json = args.includes("--json");
+  const list = args.includes("--unverified");
+  const removing = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--removing") {
+      if (!args[i + 1] || args[i + 1].startsWith("--")) die("--removing needs a repository-relative path.");
+      removing.push(args[++i]);
+    } else if (!["--json", "--unverified"].includes(args[i])) die(`Unknown references option '${args[i]}'. Run 'moorkyz help references'.`);
+  }
+  for (const entry of removing) {
+    const relative = path.relative(ROOT, path.resolve(ROOT, entry));
+    if (!relative || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative))
+      die(`--removing must name a path inside the repository: ${entry}`);
+  }
+  const result = scanReferences(ROOT, { removing });
+  if (json) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  else {
+    for (const entry of result.broken) info(`Broken: ${entry.file}:${entry.line}  ${entry.target}`);
+    for (const entry of result.removed) info(`Uses a removed path: ${entry.file}:${entry.line}  ${entry.target} (${entry.reason})`);
+    if (list) for (const entry of result.unverified) info(`Not verified (${entry.reason}): ${entry.file}:${entry.line}  ${entry.text}`);
+    const dynamicCount = result.unverified.filter((entry) => entry.reason === "dynamic").length;
+    info(`References: ${result.checked} checked in ${result.files} files; ${result.broken.length ? `${result.broken.length} broken` : "all resolve"}.`);
+    info(`Not verified: ${dynamicCount} dynamic and ${result.unverified.length - dynamicCount} base-relative path expressions${list ? "" : " (list them with --unverified)"}; path literals in ${result.fixtureFiles} test files are fixtures.`);
+  }
+  if (result.broken.length || result.removed.length) process.exitCode = 1;
+}// ---------------------------------------------------------------------------
+// up: from a fresh checkout to a running program. Each step repeats only when
+// its inputs changed; the cache lives in ignored .moorkyz/<project>.up.json.
+const CONTENT_TYPES = Object.freeze({
+  ".html": "text/html; charset=utf-8",
+  ".htm": "text/html; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".mjs": "text/javascript; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".map": "application/json; charset=utf-8",
+  ".webmanifest": "application/manifest+json; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".avif": "image/avif",
+  ".ico": "image/x-icon",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+  ".txt": "text/plain; charset=utf-8",
+  ".md": "text/markdown; charset=utf-8",
+  ".xml": "application/xml; charset=utf-8",
+  ".pdf": "application/pdf",
+});
+function escapeHtml(text) {
+  return String(text).replaceAll("&", "&amp;").replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+}
+function exactFile(filename) {
+  const relative = path.relative(ROOT, filename);
+  if (!relative || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) return false;
+  let directory = ROOT;
+  for (const part of relative.split(path.sep)) {
+    let names;
+    try { names = fs.readdirSync(directory); } catch { return false; }
+    if (!names.includes(part)) return false;
+    directory = path.join(directory, part);
+  }
+  return fs.statSync(directory).isFile();
+}
+function display(filename) {
+  return path.relative(ROOT, filename).split(path.sep).join("/") || ".";
+}
+function projectTitle() {
+  try {
+    const heading = /^# (.+)$/m.exec(fs.readFileSync(path.join(ROOT, "README.md"), "utf8"));
+    if (heading) return heading[1].replace(/[`*_]/g, "").trim();
+  } catch {
+    /* no README */
+  }
+  return path.basename(ROOT);
+}
+// A release tag names a release; anything else is a development build of a commit.
+function versionLabel(root) {
+  const git = (args) => {
+    const result = spawnSync("git", ["-C", root, ...args], { encoding: "utf8", timeout: 10000, windowsHide: true });
+    return result.status === 0 ? result.stdout.trim() : null;
+  };
+  if (!exists(path.join(root, ".git"))) return "no Git history";
+  const commit = git(["rev-parse", "--short=7", "HEAD"]);
+  if (!commit) return "no commits yet";
+  const changes = git(["status", "--porcelain", "--untracked-files=no"]) ? " · local changes" : "";
+  const tag = git(["describe", "--tags", "--exact-match", "--match", "v[0-9]*", "HEAD"]);
+  if (tag) return `${tag}${changes}`;
+  const described = /^(.+)-(\d+)-g[0-9a-f]+$/.exec(git(["describe", "--tags", "--long", "--match", "v[0-9]*", "HEAD"]) || "");
+  if (described)
+    return `development build ${commit} · ${described[2]} commit${described[2] === "1" ? "" : "s"} after ${described[1]}${changes}`;
+  return `development build ${commit}${changes}`;
+}
+function nodePin() {
+  try {
+    const major = Number(fs.readFileSync(path.join(ROOT, ".node-version"), "utf8").trim().replace(/^v/, "").split(".")[0]);
+    return Number.isInteger(major) && major > 0 ? major : null;
+  } catch {
+    return null;
+  }
+}
+function terminal() {
+  const tty = Boolean(process.stdout.isTTY);
+  const color = tty && !process.env.NO_COLOR && process.env.TERM !== "dumb";
+  const paint = (code, text) => (color ? `\x1b[${code}m${text}\x1b[0m` : text);
+  const marks = { ok: paint("32", "●"), skip: paint("90", "○"), fail: paint("31", "×"), warn: paint("33", "!"), live: paint("36", "›") };
+  const row = (mark, label, detail) => `  ${mark} ${label.padEnd(9)} ${detail}`;
+  return {
+    paint,
+    title(name, version) {
+      info("");
+      info(`  ${paint("1", "MOORKYZ")}  ${name}  ${paint("90", version)}`);
+      info("");
+    },
+    step(kind, label, detail) {
+      info(row(marks[kind], label, kind === "skip" ? paint("90", detail) : detail));
+    },
+    async task(label, detail, work) {
+      const started = Date.now();
+      let timer = null;
+      if (tty) {
+        const draw = () => process.stdout.write(`\r\x1b[K${row(marks.live, label, `${detail} ${paint("90", `${Math.round((Date.now() - started) / 1000)} s`)}`)}`);
+        draw();
+        timer = setInterval(draw, 1000);
+      }
+      try {
+        return await work();
+      } finally {
+        if (timer) {
+          clearInterval(timer);
+          process.stdout.write("\r\x1b[K");
+        }
+      }
+    },
+  };
+}
+function elapsed(started) {
+  const seconds = (Date.now() - started) / 1000;
+  return seconds < 10 ? `${seconds.toFixed(1)} s` : `${Math.round(seconds)} s`;
+}
+function since(iso) {
+  const date = new Date(iso);
+  const time = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return date.toDateString() === new Date().toDateString()
+    ? time
+    : `${date.toLocaleDateString([], { day: "numeric", month: "short" })}, ${time}`;
+}
+function capture(command, argv, cwd) {
+  return new Promise((resolve) => {
+    const child = spawn(command, argv, { cwd, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+    const chunks = [];
+    let size = 0;
+    const keep = (chunk) => {
+      chunks.push(chunk);
+      size += chunk.length;
+      while (size > 1024 * 1024 && chunks.length > 1) size -= chunks.shift().length;
+    };
+    child.stdout.on("data", keep);
+    child.stderr.on("data", keep);
+    child.on("error", (error) => resolve({ code: 1, output: error.message }));
+    child.on("close", (code) => resolve({ code: code ?? 1, output: Buffer.concat(chunks).toString("utf8") }));
+  });
+}
+function sourceFiles(root) {
+  if (exists(path.join(root, ".git"))) {
+    const listed = spawnSync("git", ["-C", root, "ls-files", "-z", "--cached", "--others", "--exclude-standard"], {
+      encoding: "utf8", timeout: 30000, windowsHide: true, maxBuffer: 256 * 1024 * 1024,
+    });
+    if (listed.status === 0) return listed.stdout.split("\0").filter(Boolean);
+  }
+  const files = [];
+  (function walk(directory) {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      if (REFERENCE_SKIP.has(entry.name) || entry.isSymbolicLink()) continue;
+      const filename = path.join(directory, entry.name);
+      if (entry.isDirectory()) walk(filename);
+      else if (entry.isFile()) files.push(path.relative(root, filename).split(path.sep).join("/"));
+    }
+  })(root);
+  return files;
+}
+// Paths, sizes and modification times: cheap to compute, and any edit changes it.
+function fingerprint(root) {
+  const hash = crypto.createHash("sha256");
+  for (const relative of sourceFiles(root).sort()) {
+    const stat = fs.statSync(path.join(root, relative), { throwIfNoEntry: false });
+    if (stat?.isFile()) hash.update(`${relative}\0${stat.size}\0${stat.mtimeMs}\n`);
+  }
+  return hash.digest("hex");
+}
+function upStatePath(name) {
+  return path.join(STATE, `${name}.up.json`);
+}
+function readUpState(name) {
+  const file = storage.scopedPath(ROOT, upStatePath(name), true);
+  try {
+    const value = JSON.parse(fs.readFileSync(file, "utf8"));
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  } catch {
+    return {}; // A missing or damaged cache only costs a rerun.
+  }
+}
+function writeUpState(name, value) {
+  fs.mkdirSync(STATE, { recursive: true });
+  folderFor(".moorkyz");
+  writeJsonAtomic(upStatePath(name), value);
+}
+function commandFor(argv) {
+  if (argv[0] === "node") return { command: process.execPath, argv: argv.slice(1) };
+  if (["npm", "pnpm", "yarn"].includes(argv[0])) return managerInvocation(argv[0], argv.slice(1));
+  return { command: argv[0], argv: argv.slice(1) };
+}
+function checkCommands(project) {
+  if (project.checks)
+    return project.checks.map((argv) => ({
+      label: argv[0] === "node" && argv.length > 1 ? argv.slice(1).join(" ") : argv.join(" "),
+      cwd: ROOT,
+      ...commandFor(argv),
+    }));
+  if (project.static) return [];
+  const scripts = packageScripts(project);
+  const names = hasScript(scripts, "verify")
+    ? ["verify"]
+    : hasScript(scripts, "validate")
+      ? ["validate"]
+      : ["format:check", "lint", "typecheck", "test", "build"].filter((s) => hasScript(scripts, s));
+  return names.map((script) => ({
+    label: `${managerFor(project).name} run ${script}`,
+    cwd: project.cwd,
+    ...scriptInvocation(project, script),
+  }));
+}
+function installPlan(project) {
+  const version = requireManager(project);
+  const manager = managerFor(project);
+  const modernYarn = manager.name === "yarn" && Number(version.split(".")[0]) >= 2;
+  const lock = { npm: "package-lock.json", pnpm: "pnpm-lock.yaml", yarn: "yarn.lock" }[manager.name];
+  const args = manager.name === "npm"
+    ? ["ci"]
+    : ["install", manager.name === "yarn" && modernYarn ? "--immutable" : "--frozen-lockfile"];
+  return { manager, lock, lockfile: path.join(manager.folder, lock), args, ...managerInvocation(manager.name, args) };
+}
+function declaresDependencies(manifest) {
+  const data = readJson(manifest);
+  return ["dependencies", "devDependencies", "optionalDependencies"].some(
+    (key) => data[key] && typeof data[key] === "object" && Object.keys(data[key]).length > 0,
+  );
+}
+function outputTail(text, lines = 30) {
+  return text.replace(/\s+$/, "").split(/\r?\n/).slice(-lines);
+}
+function createStaticServer(directory, onMiss = () => {}) {
+  const http = process.getBuiltinModule("http");
+  const root = fs.realpathSync.native(directory);
+  const headers = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer" };
+  const page = (title, body) =>
+    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;font:1rem/1.6 system-ui,sans-serif;background:#0e1211;color:#e6ebe8}main{max-width:36rem;padding:2rem}h1{margin:0 0 .5rem;font-size:1.25rem}code,a{color:#93d6a9}</style></head><body><main>${body}</main></body></html>`;
+  return http.createServer((request, response) => {
+    const reply = (status, body, extra = {}) => {
+      response.writeHead(status, { "Content-Type": "text/html; charset=utf-8", ...headers, ...extra });
+      response.end(request.method === "HEAD" ? undefined : body);
+    };
+    if (request.method !== "GET" && request.method !== "HEAD")
+      return reply(405, page("Method not allowed", "<h1>Method not allowed</h1>"), { Allow: "GET, HEAD" });
+    let url;
+    let pathname;
+    try {
+      url = new URL(request.url, "http://preview.invalid");
+      pathname = decodeURIComponent(url.pathname);
+    } catch {
+      return reply(400, page("Bad request", "<h1>Bad request</h1>"));
+    }
+    const missing = (detail = "") => {
+      onMiss(url.pathname);
+      reply(404, page("Not found", `<h1>Not found</h1><p><code>${escapeHtml(url.pathname)}</code> is not part of this preview.${detail}</p><p><a href="/">Back to the start page</a></p>`));
+    };
+    const segments = pathname.split("/").filter(Boolean);
+    // Hidden folders such as .git, .env or .moorkyz are never served.
+    if (segments.some((part) => part.startsWith(".") || /[\\\0:]/.test(part))) return missing();
+    let filename = path.join(root, ...segments);
+    let stat = fs.statSync(filename, { throwIfNoEntry: false });
+    if (stat?.isDirectory()) {
+      if (!url.pathname.endsWith("/")) return reply(308, "", { Location: `${url.pathname}/${url.search}` });
+      filename = path.join(filename, "index.html");
+      stat = fs.statSync(filename, { throwIfNoEntry: false });
+    }
+    if (!stat?.isFile()) return missing();
+    let real;
+    try {
+      real = fs.realpathSync.native(filename);
+    } catch {
+      return missing();
+    }
+    const relative = path.relative(root, real);
+    if (!relative || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) return missing();
+    if (relative !== path.relative(root, filename))
+      return missing(` The file is named <code>${escapeHtml(relative.split(path.sep).join("/"))}</code>; production servers are case-sensitive.`);
+    response.writeHead(200, {
+      "Content-Type": CONTENT_TYPES[path.extname(real).toLowerCase()] || "application/octet-stream",
+      "Content-Length": stat.size,
+      ...headers,
+    });
+    if (request.method === "HEAD") return response.end();
+    fs.createReadStream(real).on("error", () => response.destroy()).pipe(response);
+  });
+}
+async function serveStatic(project, ui, open) {
+  const configured = new URL(project.url);
+  const host = net.isIP(configured.hostname.replace(/^\[|\]$/g, "")) ? configured.hostname.replace(/^\[|\]$/g, "") : "127.0.0.1";
+  const first = Number(configured.port || 80);
+  let port = null;
+  for (let candidate = first; candidate < first + 20 && candidate <= 65535; candidate++)
+    if (await canListen(candidate, host)) {
+      port = candidate;
+      break;
+    }
+  if (!port) {
+    ui.step("fail", "Start", `ports ${first}-${first + 19} are all in use.`);
+    process.exitCode = 1;
+    return;
+  }
+  const server = createStaticServer(project.static, (pathname) => {
+    if (pathname !== "/favicon.ico") info(`    ${ui.paint("33", "404")}  ${pathname}`);
+  });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen({ port, host }, resolve);
+  });
+  const origin = `http://${host.includes(":") ? `[${host}]` : host}:${port}/`;
+  const url = new URL(project.open.split(/[\\/]/).map(encodeURIComponent).join("/"), origin).toString();
+  ui.step("live", "Start", `${url}${port === first ? "" : ui.paint("90", `  (port ${first} was in use)`)}`);
+  info("");
+  info(`  ${ui.paint("90", "Serving the preview. Press Ctrl+C or close this window to stop.")}`);
+  info("");
+  if (open) openBrowser(url, true);
+  await new Promise((resolve) => {
+    const stop = () => {
+      server.closeAllConnections();
+      server.close(() => resolve());
+    };
+    process.once("SIGINT", stop);
+    process.once("SIGTERM", stop);
+  });
+  info(`  ${ui.paint("90", "Stopped.")}`);
+}
+async function runForeground(project, config, ui, open) {
+  const active = running(project.name);
+  if (active) {
+    const url = runtimeUrl(project, active);
+    ui.step("ok", "Start", `already running at ${url} (started with moorkyz start)`);
+    info("");
+    if (open) openBrowser(url, true);
+    return;
+  }
+  const port = await assignedPort(project, Object.keys(config.projects));
+  const url = urlForPort(project.url, port);
+  const scriptText = packageScripts(project)[project.dev];
+  const { command, argv } = scriptInvocation(project, project.dev, portArguments(project, scriptText, port));
+  ui.step("live", "Start", `${url}  ${ui.paint("90", `${managerFor(project).name} run ${project.dev} · Ctrl+C stops it`)}`);
+  info("");
+  const child = spawn(command, argv, {
+    cwd: project.cwd,
+    stdio: "inherit",
+    env: { ...process.env, PORT: String(port), NODE_ENV: process.env.NODE_ENV || "development" },
+  });
+  // The console delivers Ctrl+C to the program too; wait for it to finish.
+  const ignore = () => {};
+  process.on("SIGINT", ignore);
+  const deadline = Date.now() + project.startupTimeoutMs;
+  let watching = true;
+  (async () => {
+    while (watching && Date.now() < deadline) {
+      if ((await Promise.all(portHosts(new URL(url)).map((h) => connectable(port, h)))).some(Boolean)) {
+        if (open && watching) openBrowser(url, true);
+        return;
+      }
+      await sleep(250);
+    }
+  })();
+  const code = await new Promise((resolve) => {
+    child.on("error", (error) => {
+      console.error(error.message);
+      resolve(1);
+    });
+    child.on("exit", (exitCode, signal) => resolve(exitCode ?? (signal ? 130 : 0)));
+  });
+  watching = false;
+  process.removeListener("SIGINT", ignore);
+  process.exitCode = code;
+}
+async function up(config, args) {
+  const options = new Set();
+  const names = [];
+  for (const arg of args) {
+    if (["--no-start", "--no-open", "--force"].includes(arg)) options.add(arg);
+    else if (arg.startsWith("-")) die(`Unknown option '${arg}'. Run 'moorkyz help up'.`);
+    else names.push(arg);
+  }
+  if (names.length > 1) die("Usage: moorkyz up [project] [--no-start] [--no-open] [--force]");
+  const project = config.projects[targetNames(config, names[0], false)[0]];
+  const ui = terminal();
+  const fail = (label, detail, hint, output) => {
+    ui.step("fail", label, detail);
+    if (output) {
+      info("");
+      for (const line of outputTail(output)) info(`    ${line}`);
+    }
+    if (hint) {
+      info("");
+      info(`  ${hint}`);
+    }
+    info("");
+    process.exitCode = 1;
+  };
+  ui.title(projectTitle(), versionLabel(ROOT));
+
+  const pinned = nodePin();
+  const major = Number(process.versions.node.split(".")[0]);
+  if (pinned && major < pinned)
+    return fail("Runtime", `Node.js ${process.versions.node} is older than the pinned ${pinned}.`,
+      `Run RUN.cmd, which can provide Node.js ${pinned}, or install Node.js ${pinned} LTS.`);
+  ui.step("ok", "Runtime", `Node.js ${process.versions.node}${pinned && major > pinned ? ui.paint("90", `  newer than the pinned ${pinned}`) : ""}`);
+
+  if (project.static) {
+    const entry = path.join(project.static, project.open);
+    if (!exactFile(entry))
+      return fail("Files", `${display(entry)} is missing.`, `Restore it, or set "open" for '${project.name}' in moorkyz.config.json.`);
+    ui.step("ok", "Files", `${display(entry)}`);
+  } else {
+    const manifest = path.join(project.cwd, "package.json");
+    if (!exists(manifest))
+      return fail("Files", `No program is configured for '${project.name}'.`,
+        "Add a package.json with a dev script, or describe the program in moorkyz.config.json (docs/INFRASTRUCTURE.md).");
+    if (!hasScript(packageScripts(project), project.dev))
+      return fail("Files", `${display(manifest)} has no '${project.dev}' script.`, `Add it, or set "dev" for '${project.name}' in moorkyz.config.json.`);
+    ui.step("ok", "Files", `${display(manifest)} · ${project.dev} script`);
+  }
+
+  const state = readUpState(project.name);
+  const manifest = path.join(project.cwd, "package.json");
+  if (project.static || !exists(manifest) || !declaresDependencies(manifest)) {
+    ui.step("skip", "Packages", "none declared");
+  } else {
+    const plan = installPlan(project);
+    if (!exists(plan.lockfile))
+      return fail("Packages", `${display(plan.lockfile)} is missing.`,
+        `Generate and review the lockfile with ${plan.manager.name}; installs never rewrite it.`);
+    const hash = crypto.createHash("sha256")
+      .update(fs.readFileSync(plan.lockfile))
+      .update(fs.readFileSync(manifest))
+      .digest("hex");
+    const installed = exists(path.join(plan.manager.folder, "node_modules"));
+    if (installed && state.packages?.hash === hash && !options.has("--force")) {
+      ui.step("skip", "Packages", `unchanged since ${since(state.packages.at)}`);
+    } else {
+      const started = Date.now();
+      const result = await ui.task("Packages", `${plan.manager.name} ${plan.args.join(" ")}`, () => capture(plan.command, plan.argv, plan.manager.folder));
+      if (result.code !== 0)
+        return fail("Packages", `${plan.manager.name} install failed (exit ${result.code}).`, "Fix the problem above, then run again.", result.output);
+      state.packages = { hash, at: new Date().toISOString() };
+      writeUpState(project.name, state);
+      ui.step("ok", "Packages", `installed from ${display(plan.lockfile)} in ${elapsed(started)}`);
+    }
+  }
+
+  const key = (value) => `${value}|${process.version}`;
+  if (state.checks?.key === key(fingerprint(ROOT)) && !options.has("--force")) {
+    ui.step("skip", "Checks", `unchanged since they passed at ${since(state.checks.at)}`);
+  } else {
+    const started = Date.now();
+    const commands = checkCommands(project);
+    for (const [index, check] of commands.entries()) {
+      const label = `${check.label}${commands.length > 1 ? ` (${index + 1}/${commands.length})` : ""}`;
+      const result = await ui.task("Checks", label, () => capture(check.command, check.argv, check.cwd));
+      if (result.code !== 0)
+        return fail("Checks", `${check.label} failed (exit ${result.code}).`, "Fix the problem above, then run again; nothing was started.", result.output);
+    }
+    const references = scanReferences(ROOT);
+    state.checks = { key: key(fingerprint(ROOT)), at: new Date().toISOString() };
+    writeUpState(project.name, state);
+    const summary = commands.length ? `${commands.length} passed in ${elapsed(started)}` : "no checks configured";
+    ui.step("ok", "Checks", `${summary} · ${references.checked} references`);
+    if (references.broken.length)
+      ui.step("warn", "Links", `${references.broken.length} broken reference${references.broken.length === 1 ? "" : "s"}; list them with 'node moorkyz references'.`);
+  }
+
+  if (options.has("--no-start")) {
+    ui.step("skip", "Start", "not started (--no-start)");
+    info("");
+    return;
+  }
+  if (project.static) await serveStatic(project, ui, !options.has("--no-open"));
+  else await runForeground(project, config, ui, !options.has("--no-open"));
 }
 function doctor(config) {
   info(`Project root: ${ROOT}`);
@@ -1889,6 +2750,12 @@ function doctor(config) {
     `Moorkyz config: ${exists(path.join(ROOT, "moorkyz.config.json")) ? "present" : "defaults (single root project)"}`,
   );
   for (const project of Object.values(config.projects)) {
+    if (project.static) {
+      info(
+        `  ${project.name}: static preview of ${path.relative(ROOT, project.static) || "."}, opens ${project.open}; ${project.checks ? project.checks.length : 0} configured checks`,
+      );
+      continue;
+    }
     const manager = managerFor(project);
     const { command, argv } = managerInvocation(manager.name, ["--version"]);
     const installed = spawnSync(command, argv, {
@@ -1956,6 +2823,7 @@ function renderReadme(markdown) {
 }
 function help(command) {
   const commands = {
+    up: "moorkyz up [project] [--no-start] [--no-open] [--force]  Check the runtime, files, packages and checks (repeating only what changed), then run the program in the foreground.",
     start:
       "moorkyz start [project|all] [--prod]  Start fresh on the saved/configured port and open its URL.",
     stop: "moorkyz stop [project|all]          Stop only services started and verified by Moorkyz.",
@@ -1967,6 +2835,8 @@ function help(command) {
     list: "moorkyz list                         List configured projects.",
     doctor:
       "moorkyz doctor                       Check Node, the package manager, scripts, and repository prerequisites.",
+    version:
+      "moorkyz version                      Show the release tag, or the development build (commit) this checkout is.",
     verify:
       "moorkyz verify [project]             Run package.json verify script, or available quality gates.",
     build:
@@ -1984,6 +2854,8 @@ function help(command) {
       'moorkyz audit "task description"       Create a draft in .audits/ from docs/AUDIT_TEMPLATE.md.',
     readme:
       "moorkyz readme                       Regenerate README.html from README.md.",
+    references:
+      "moorkyz references [--unverified] [--json] [--removing <path> ...]  Check literal file references in docs, config and source; list uses of paths about to be removed.",
     archive:
       "moorkyz archive <path> [path ...]     Compress selected project paths in one verified ZIP, then remove their originals.",
     maintain:
@@ -2039,6 +2911,15 @@ async function main() {
     info("Regenerated README.html.");
     return;
   }
+  if (command === "references") {
+    referencesCommand(args);
+    return;
+  }
+  if (command === "version") {
+    if (args.length) die("Usage: moorkyz version");
+    info(`${projectTitle()} ${versionLabel(ROOT)}`);
+    return;
+  }
   const config = cfg();
   if (command === "maintain") {
     if (args.length) die("Usage: moorkyz maintain");
@@ -2073,6 +2954,10 @@ async function main() {
   }
   if (command === "doctor") {
     doctor(config);
+    return;
+  }
+  if (command === "up") {
+    await up(config, args);
     return;
   }
   if (command === "audit") {
@@ -2148,6 +3033,20 @@ async function main() {
       die("Unexpected arguments. Run moorkyz help.");
     const name = targetNames(config, args[0], false)[0];
     const project = config.projects[name];
+    if (command === "verify" && project.checks) {
+      for (const check of checkCommands(project)) {
+        info(`\n--- ${check.label} ---`);
+        const result = spawnSync(check.command, check.argv, { cwd: check.cwd, stdio: "inherit" });
+        if (result.error) die(`${check.label}: ${result.error.message}`);
+        if (result.status !== 0) {
+          process.exitCode = result.status ?? 1;
+          return;
+        }
+      }
+      return;
+    }
+    if (project.static)
+      die(`'${name}' is a static preview without package scripts; use 'moorkyz up ${name}' or 'moorkyz verify ${name}'.`);
     if (command === "security" || command === "install") {
       const version = requireManager(project);
       const manager = managerFor(project);
@@ -2162,25 +3061,12 @@ async function main() {
               : ["audit", "--level", "high"]
             : ["audit", "--audit-level", "high"];
       else {
-        const lock =
-          manager.name === "npm"
-            ? "package-lock.json"
-            : manager.name === "pnpm"
-              ? "pnpm-lock.yaml"
-              : "yarn.lock";
-        if (!exists(path.join(manager.folder, lock)))
+        const plan = installPlan(project);
+        if (!exists(plan.lockfile))
           die(
-            `Missing ${lock} in ${path.relative(ROOT, manager.folder) || "."}. Generate and review the lockfile with ${manager.name} before reproducible installation.`,
+            `Missing ${plan.lock} in ${path.relative(ROOT, manager.folder) || "."}. Generate and review the lockfile with ${manager.name} before reproducible installation.`,
           );
-        argumentsForManager =
-          manager.name === "npm"
-            ? ["ci"]
-            : [
-                "install",
-                manager.name === "yarn" && modernYarn
-                  ? "--immutable"
-                  : "--frozen-lockfile",
-              ];
+        argumentsForManager = plan.args;
       }
       const { command: executable, argv } = managerInvocation(
         manager.name,
@@ -2219,7 +3105,8 @@ async function main() {
   }
   die(`Unknown command '${command}'. Run 'moorkyz help'.`);
 }
-if (typeof module !== "undefined") module.exports = { ...storage, renderReadme };
+if (typeof module !== "undefined")
+  module.exports = { ...storage, renderReadme, scanReferences, stringLiterals, versionLabel, createStaticServer, fingerprint };
 if (typeof require === "undefined" || require.main === module) main().catch((error) => {
   console.error(`Error: ${error.message}`);
   process.exitCode = 1;

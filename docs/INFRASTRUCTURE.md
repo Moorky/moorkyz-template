@@ -6,8 +6,9 @@ not under `.template/`. Copy just the script if needed; it runs in
 CommonJS and ESM projects and always operates on the **current working directory**.
 
 Consult the [template-tool catalog](../.template/README.md) when a task may need existing
-tooling. Use this CLI for audits, README generation or explicitly authorized
-project/storage actions; choose maintenance, setup or presets only when they fit.
+tooling. Use this CLI for checks (`up --no-start`, `references`), audits, README
+generation or explicitly authorized project/storage actions; choose maintenance,
+setup or presets only when they fit. [RUN.cmd](../RUN.cmd) runs `up` for people.
 
 ## Setup
 
@@ -34,6 +35,7 @@ are not installed by the template.
 | Command | Action |
 |---|---|
 | `moorkyz help [command]` | Command help |
+| `moorkyz up [name] [--no-start] [--no-open] [--force]` | What RUN.cmd runs: check the runtime, files, packages and checks, repeating only what changed, then run the program in the foreground |
 | `moorkyz start [name\|all] [--prod]` | Start a fresh managed instance on the saved/configured port and open its URL |
 | `moorkyz stop [name\|all]` | Stop only processes the CLI started and verified |
 | `moorkyz restart [name\|all] [--prod]` | Stop, start and open the URL |
@@ -48,6 +50,8 @@ are not installed by the template.
 | `moorkyz run <script> [name]` | Run an existing `package.json` script |
 | `moorkyz audit "task title"` | Create an unfilled draft in `.audits/` from `docs/AUDIT_TEMPLATE.md` |
 | `moorkyz readme` | Regenerate `README.html` from `README.md` |
+| `moorkyz references [--unverified] [--json] [--removing <path>]` | Check links and literal file paths in docs, configuration and source; list uses of paths about to be removed |
+| `moorkyz version` | Show the release tag, or the development build (commit) of this checkout |
 | `moorkyz archive <path> [path ...]` | Compress paths into one verified ZIP, then remove the originals |
 | `moorkyz maintain` | Archive malformed/excess logs, then apply archive age, size and free-space retention |
 
@@ -82,6 +86,38 @@ to add `moorkyz.config.example.json`, then copy it to `moorkyz.config.json`:
 - The CLI sets `PORT`, passes `--port` to Vite/Astro (Vite also gets `--strictPort`) and supports `"portArgs": ["--port", "{port}"]`. `startupTimeoutMs` defaults to 20000 (1000–300000). Success means a verified supervisor heartbeat plus a TCP listener, not an HTTP health check.
 - Restarting validates the replacement script first, stops only the verified instance, waits up to five seconds for the port and starts a new process and log. Project files, scripts, caches and recovery data are kept.
 
+### Static programs and checks
+
+A project with `"static"` serves that folder instead of running package scripts. This
+template's own [moorkyz.config.json](../moorkyz.config.json) uses it for the template website:
+
+```json
+{
+  "defaultProject": "website",
+  "projects": {
+    "website": { "static": ".", "open": "index.html", "url": "http://127.0.0.1:4173", "checks": [["node", "website/verify.mjs"]] }
+  }
+}
+```
+
+- `open` is the start page inside the static folder (default `index.html`); `url` defaults to `http://127.0.0.1:4173`. When that port is busy, `up` uses the next free one and says so.
+- `checks` lists commands as argument arrays, run from the repository root without a shell (`node` means the running Node.js). Any project may set them; otherwise `up` and `verify` use the `verify`, `validate` or quality scripts in `package.json`.
+- Static programs run in the foreground with `up`; `start` explains this instead of starting a background service.
+
+### up
+
+`up` is what RUN.cmd runs. Each step prints one line and repeats only when its inputs changed:
+
+1. **Runtime:** Node.js must reach the `.node-version` major; a newer major is noted.
+2. **Files:** the static start page, or `package.json` with the `dev` script, must exist.
+3. **Packages:** when dependencies are declared, a reproducible install from the lockfile runs if the lockfile or `package.json` changed or `node_modules` is missing. A missing lockfile stops the run.
+4. **Checks:** the configured checks run when any file that is not ignored, or the Node.js version, changed since they last passed. References are checked too; broken ones are a warning here and a failure in maintenance.
+5. **Start:** a static preview, or the `dev` script with `PORT` and `NODE_ENV=development`, in the foreground; the browser opens once the port answers. A program already started with `moorkyz start` is reused.
+
+The cache is `.moorkyz/<name>.up.json`; `--force` repeats packages and checks, and
+`--no-start` stops after the checks (for agents and CI). A failing step stops the run
+before anything starts and prints the last lines of its output.
+
 ## Safety
 
 - State lives in ignored `.moorkyz/`. State, locks and log paths refuse symlinks/junctions; corrupt state stops with an error and is preserved.
@@ -89,6 +125,8 @@ to add `moorkyz.config.example.json`, then copy it to `moorkyz.config.json`:
 - A killed CLI can leave a lock. Confirm its owner PID is gone before removing that exact lock. Stop services started by an older CLI with that version before upgrading.
 - Unix stops send SIGTERM to the process group; Windows uses `taskkill /T /F` on the verified tree. Daemonized descendants may escape control, so this is not a production process manager.
 - `start --prod` runs a production script locally; it does not deploy.
+- The static preview listens on loopback only, serves GET and HEAD, never serves hidden files or folders (`.git`, `.env`, `.moorkyz`), rejects path traversal and symlinks leaving the folder, answers wrong filename casing with 404 like case-sensitive production servers, and disables caching.
+- `references` reads files only. Literal paths are checked against the repository root and the referencing file's folder; paths built at run time and paths relative to other bases are listed as not verified (`--unverified`) instead of being guessed, and path literals in test files count as fixtures.
 - `security` only reports advisories; Dependabot proposes updates ([dependency maintenance](dependency-security.md)).
 
 ## Logs and archives

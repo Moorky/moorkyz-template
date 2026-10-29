@@ -36,18 +36,19 @@ Nothing is written to log files.
   It parses every PowerShell script, requires its `-DryRun` parameter and invokes
   that no-op mode in a separate process. It syntax-checks JavaScript modules
   without importing them, checks every public CLI command with `--dry-run`, and
-  exercises the Windows CMD selector with `-DryRun` on Windows. Linux explicitly
+  exercises the Windows CMD selector and `RUN.cmd` with `-DryRun` on Windows. Linux explicitly
   skips the CMD execution; the Windows CI job covers it. Unknown runnable formats
   or batch entrypoints fail rather than being executed speculatively.
-- [02-documentation.ps1](helpers/checkups/02-documentation.ps1) checks local Markdown/HTML
-  links with exact filename casing, including audits and agent/setup docs, and
-  compares the generated README HTML with Markdown without rewriting either.
-  It also rejects retired script names in active docs/examples and verifies
+- [02-documentation.ps1](helpers/checkups/02-documentation.ps1) compares the
+  generated README HTML with Markdown without rewriting either, checks the tool
+  layout (including the root CLI and the thin `RUN.cmd` launcher with CRLF line
+  endings), rejects retired script names in active docs/examples and verifies
   manifest icon filenames, the shared CI Node pin and maintenance command,
   runtime ignore boundaries, private reporting and README escaping safeguards.
   When `.github/ISSUE_TEMPLATE/` exists, each issue form needs `name`,
   `description` and `body` with unique field ids, and the chooser must link the
-  same private reporting address as `SECURITY.md`.
+  same private reporting address as `SECURITY.md`. Links and literal paths are
+  checked by checkup 09.
 - [03-project-types.ps1](helpers/checkups/03-project-types.ps1) validates JSON and ESM
   syntax without importing modules or installing packages. It verifies that the
   Node starter runs maintenance checks and that tooling presets remain
@@ -95,21 +96,40 @@ Nothing is written to log files.
 Windows shortcuts in disposable fixtures using both available PowerShell hosts:
 real COM targets, arguments, working directories and icon properties, supplied
 ICO integrity, source preservation, inventories, safe modes and conflict/link
-refusal. Non-Windows hosts check the explicit unsupported-platform error and
-skip Windows COM assertions. No existing launchers or file associations change.
+refusal. A repository root of 160 characters must work, and a shortcut beyond the
+259-character Windows limit must be skipped with its needed length instead of
+failing the run. Non-Windows hosts check the explicit unsupported-platform error
+and skip Windows COM assertions. No existing launchers or file associations change.
 
-- [09-claim-template.ps1](helpers/checkups/09-claim-template.ps1) verifies one-time
-  adoption in disposable full copies of the template: the shipped configuration has
-  no placeholder text and typed lists; invalid values, missing provenance, short
-  commit SHAs, still-referenced removals and removing `.audits` are refused without
-  changes. A Git clone flow on each available PowerShell host checks provenance
-  detection, the clean audit trail (no template records, example-only work queue,
-  adoption record, clean audit README), commit-pinned evidence links, owner and
-  title replacement, regenerated README editions, the adopted copy's own
-  documentation check, and unchanged reruns. It also covers manual `-TemplateCommit`
-  provenance, broken-link reporting and its passing rerun in the adoption record,
-  the select-only project-type menu with simulated keys, and that a generated
-  configuration passes validation.
+- [09-template-integrity.ps1](helpers/checkups/09-template-integrity.ps1) checks
+  everything that makes the template trustworthy to adopt:
+  - **Release metadata:** changelog headings, newest first, a changelog entry for
+    a checked-out release tag, the archive commit stamp and the version labels for
+    releases, development builds and local changes.
+  - **References:** every link and literal path in the repository resolves with
+    exact casing; rule-by-rule units per file type (including dynamic and
+    base-relative expressions, which are reported rather than guessed); a mutated
+    copy whose renamed files must be reported in YAML, JSON, batch, PowerShell,
+    ES module, Dockerfile, configuration and Markdown references; and removal checks.
+  - **Provenance and adoption:** a disposable upstream with a tagged release and a
+    later commit stands in for GitHub through Git's own `url.insteadOf`, so the
+    production code path runs unchanged. It covers refusals without changes (shipped
+    placeholders, typed lists, no provenance, short, unknown and never-published
+    commits, still-referenced removals, `.audits`); a manual `-TemplateCommit`
+    adoption with a broken link and its passing rerun; a clone with a local commit
+    on each PowerShell host (development-build version, clean audit trail,
+    example-only work queue, pinned evidence links, owner and title replacement,
+    regenerated outputs, no broken references, unchanged reruns); a GitHub template
+    copy recognized by its first commit's files; a GitHub-style archive recognized
+    by its stamp; the select-only project-type menu; and generated-config validation.
+- [10-run.ps1](helpers/checkups/10-run.ps1) checks [RUN.cmd](../../RUN.cmd) and
+  `moorkyz up` in disposable copies. On Windows, with a PATH without Node.js and a
+  local mirror, the bootstrap must refuse without consent, reject a checksum
+  mismatch without leaving files, install the verified runtime through RUN.cmd
+  and reuse it without downloading. `up` must repeat checks only after a change or
+  `--force`, stop on failing checks, missing entry pages, an old Node.js or a
+  missing lockfile, run a script program with `PORT` and `NODE_ENV`, avoid a busy
+  port, and serve previews without hidden files, traversal or wrong casing.
 
 ## Safe modes
 

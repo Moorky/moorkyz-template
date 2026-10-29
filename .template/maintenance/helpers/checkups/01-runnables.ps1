@@ -59,7 +59,7 @@ foreach ($file in @(Get-Runnables $root | Sort-Object FullName)) {
             }
             else { Write-Host 'Syntax only; JavaScript modules are not imported or executed.' }
         }
-        elseif ($relative -eq '.template/project-types/SetProjectType.cmd') {
+        elseif ($relative -in '.template/project-types/SetProjectType.cmd', 'RUN.cmd') {
             if ($env:OS -eq 'Windows_NT') {
                 & $env:ComSpec /d /c ('call "{0}" -DryRun' -f $file.FullName)
                 if ($LASTEXITCODE -ne 0) { throw "Batch dry run exited with code $LASTEXITCODE." }

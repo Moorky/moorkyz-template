@@ -86,7 +86,11 @@ tooling. Read the relevant tool's README and use its entrypoint when appropriate
 maintenance for verification, project types for opt-in starters, project setup
 for adoption, soft copy for selected files in existing repositories, Copilot setup
 for reviewed editor settings, script icons for local Windows shortcuts, and the CLI
-for audits, README generation or authorized project/storage actions. Do not run all
+for audits, README generation, reference checks or authorized project/storage
+actions. `RUN.cmd` is for people: it keeps the program running in the foreground.
+Agents use `node moorkyz up --no-start` to run the same checks, `node moorkyz
+references` for links and literal paths, and `moorkyz start` for managed background
+services. Do not run all
 tools automatically. Prefer `-DryRun` / `--dry-run` for no-op checks and `-WhatIf` for
 input-aware previews where supported. For orientation (file map, role paths, common
 tasks and the template library, including task brief, design and decision templates),
@@ -94,8 +98,9 @@ read [TEMPLATE_INTRODUCTION.md](TEMPLATE_INTRODUCTION.md); it never overrides th
 
 Keep reusable template tooling separate from project-owned source and tooling.
 Keep template tool folders in `.template/<tool>/`: entrypoint(s) and `README.md` together,
-with supporting files under `helpers/`. The explicit exception is the
-self-contained `moorkyz` CLI, which must remain at the repository root.
+with supporting files under `helpers/`. The explicit exceptions are the
+self-contained `moorkyz` CLI and the thin `RUN.cmd` launcher, which must remain at
+the repository root.
 Keep workflows and agent-discovery files
 in their required platform locations. Never use live configuration or runtime
 data as a regression-test fixture.

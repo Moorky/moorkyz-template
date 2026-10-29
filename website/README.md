@@ -1,8 +1,9 @@
 # Static template catalog
 
-Open [the website](../index.html) directly in a browser, or serve the repository
-with any static file server. No package install, application runtime or build
-step is needed to browse the committed website.
+Double-click [RUN.cmd](../RUN.cmd) (or run `node moorkyz up`) to check the website
+and serve it locally, or open [the website](../index.html) directly in a browser,
+or serve the repository with any static file server. No package install,
+application runtime or build step is needed to browse the committed website.
 
 The catalog covers all twenty [designs](../designs/README.md), with a README
 edition and a landing page for each. **Design** is the category; **README** and

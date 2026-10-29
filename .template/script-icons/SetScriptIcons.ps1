@@ -15,6 +15,9 @@ $icon = Join-Path $PSScriptRoot 'helpers\moorkyz.ico'
 $output = Join-Path $root '.moorkyz\script-icons'
 $excluded = '.git', '.moorkyz', '.logs', '.archive', 'node_modules', 'coverage', 'dist', 'build', 'tmp', '.tmp'
 $extensions = '.ps1', '.cmd', '.bat', '.exe', '.com', '.js', '.cjs', '.mjs', '.sh', '.py', '.vbs', '.wsf'
+# Windows Script Host cannot save longer shortcut paths, silently truncates longer
+# targets, and Explorer cannot open shortcuts stored beyond this length.
+$shellPathLimit = 259
 
 function Assert-RegularPath([string]$Path) {
     $current = [IO.Path]::GetFullPath($Path)
@@ -78,13 +81,23 @@ $inventory = @(
         else {
             $reason = 'Browser/configuration/library source or no supported standalone launcher; left unchanged.'
         }
+        $shortcut = if ($target) { Join-Path $output ($relative + '.lnk') } else { $null }
+        if ($target) {
+            $longest = (@($shortcut, $file.FullName, $target, $root, $icon) | Measure-Object -Property Length -Maximum).Maximum
+            if ($longest -gt $shellPathLimit) {
+                $reason = "Windows shortcuts support paths of up to $shellPathLimit characters; this one needs $longest. Move the repository to a shorter folder to include it."
+                $target = $null
+                $arguments = ''
+                $shortcut = $null
+            }
+        }
         [pscustomobject]@{
             File = $relative
             Status = if ($target) { 'Shortcut' } else { 'Skipped' }
             Reason = $reason
             Target = $target
             Arguments = $arguments
-            Shortcut = if ($target) { Join-Path $output ($relative + '.lnk') } else { $null }
+            Shortcut = $shortcut
         }
     }
 )

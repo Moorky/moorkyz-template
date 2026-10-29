@@ -1,0 +1,14 @@
+{
+  "defaultProject": "website",
+  "projects": {
+    "website": {
+      "static": ".",
+      "open": "index.html",
+      "url": "http://127.0.0.1:4173",
+      "checks": [
+        ["node", "website/verify.mjs"],
+        ["node", "designs/verify.mjs"]
+      ]
+    }
+  }
+}

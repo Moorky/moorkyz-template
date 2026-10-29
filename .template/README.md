@@ -7,7 +7,8 @@ Run commands from the repository root unless a tool's README says otherwise.
 
 | Tool | Entry script(s) | When to use |
 |---|---|---|
-| [Moorkyz CLI](../docs/INFRASTRUCTURE.md) | [moorkyz](../moorkyz) | CLI help, README generation, task audits, or explicitly authorized project/storage operations |
+| [Run](run/README.md) | [RUN.cmd](../RUN.cmd), [Run.ps1](run/Run.ps1) | Go from a fresh copy to the running program: runtime, files, packages and checks, repeating only what changed |
+| [Moorkyz CLI](../docs/INFRASTRUCTURE.md) | [moorkyz](../moorkyz) | CLI help, checks with `up` and `references`, README generation, task audits, or explicitly authorized project/storage operations |
 | [Maintenance](maintenance/README.md) | [RunCheckups.ps1](maintenance/RunCheckups.ps1) | Verify runnable syntax, safe modes, documentation and presets |
 | [Project types](project-types/README.md) | [SetProjectType.cmd](project-types/SetProjectType.cmd), [SetProjectType.ps1](project-types/SetProjectType.ps1) | Preview or add explicitly selected stack/tooling presets |
 | [Claim Template (use once)](claim-template/README.md) | [CreateProject.ps1](claim-template/CreateProject.ps1) | One-time adoption of a template copy for a real project; never apply in the template itself |
@@ -17,9 +18,11 @@ Run commands from the repository root unless a tool's README says otherwise.
 
 Every tool folder keeps its entry script(s) and `README.md` at that folder's root.
 Supporting files live under `helpers/`: maintenance checkups, project-type
-starters and setup configuration/templates. By explicit owner instruction,
-the self-contained `moorkyz` CLI stays at the repository root with the root
-README; it has no helper files and is the only root-tool exception.
+starters and setup configuration/templates. By explicit owner instruction, two
+entries live at the repository root: the self-contained `moorkyz` CLI, which has
+no helper files, and `RUN.cmd`, a thin double-click launcher for
+[run/Run.ps1](run/Run.ps1). Template releases are listed in the
+[changelog](CHANGELOG.md).
 
 PowerShell entrypoints accept `-DryRun`; the CLI accepts `--dry-run`.
 These modes perform no actions or configuration validation. Use `-WhatIf`

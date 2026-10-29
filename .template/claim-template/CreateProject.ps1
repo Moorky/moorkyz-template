@@ -12,18 +12,21 @@ then shows its plan, asks for confirmation and:
   3. on the first adoption, starts the project's own audit trail: the template's
      audit records and work-queue history are not inherited, links to those records
      point to the template commit, and an adoption record in .audits/ preserves the
-     template provenance (repository, version and commit SHA),
+     template provenance (repository, version and commit SHA). The commit is found
+     from Git history, a GitHub template copy's first commit, a GitHub ZIP download
+     or -TemplateCommit, and is always verified in the template repository,
   4. replaces the project placeholder and template GitHub owner in text files
      (.audits/, commit-pinned template links and this folder are left as they are),
-  5. sets the README title, regenerates README.html when Node.js is available and
-     validates every internal Markdown/HTML link.
+  5. sets the README title, regenerates README.html and the design README editions,
+     and validates links and literal paths in docs, configuration and source files.
 Interactive runs without configured project types can choose them in the existing
 project-type menu; the selection is validated and saved to setup.config.json.
 Rerunning is safe. It always ends with "Press any key to continue".
 
 .PARAMETER TemplateCommit
 Full SHA of the template commit this copy was made from. Needed only for the first
-adoption when Git cannot provide it (the copy's origin is not Moorky/moorkyz-template).
+adoption of a copy that is neither a clone, a GitHub template copy nor a GitHub
+ZIP download. It must exist in the template repository.
 
 .EXAMPLE
 powershell -ExecutionPolicy Bypass -File ".template\claim-template\CreateProject.ps1" -WhatIf
@@ -68,7 +71,6 @@ $htmlLink = [regex]'(?:href|src)=["'']([^"'']+)["'']'
 # Commit-pinned links to the template are provenance and must keep pointing at the template.
 $templateLink = [regex]('github\.com/' + [regex]::Escape($templateOwner) + '/' + [regex]::Escape($templateRepository) + '(?!/(?:blob|tree|commit)/[0-9a-f]{40})')
 $utf8 = New-Object Text.UTF8Encoding($false)
-$nameCache = New-Object 'System.Collections.Generic.Dictionary[string,object]' ([StringComparer]::Ordinal)
 
 function Wait-Key {
     if ($NoPause -or [Console]::IsInputRedirected) { return }
@@ -249,43 +251,128 @@ function ConvertTo-SetupJson($Plan) {
     ($lines -join "`n") + "`n"
 }
 
-function Invoke-Git([string[]]$Arguments) {
+function Invoke-GitCommand([string[]]$Arguments) {
     # Native stderr must not become a terminating error on Windows PowerShell 5.1.
     $ErrorActionPreference = 'Continue'
     $git = Get-Command git -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $git) { return $null }
-    $output = @(& $git.Source -C $root @Arguments 2>$null)
+    $output = @(& $git.Source @Arguments 2>$null)
     if ($LASTEXITCODE) { return $null }
     , $output
 }
 
-function Get-TemplateProvenance {
-    if ($TemplateCommit) {
-        if ($TemplateCommit -notmatch '^[0-9a-fA-F]{40}$') { throw '-TemplateCommit must be the full 40-character template commit SHA.' }
-        return [pscustomobject]@{
-            Commit = $TemplateCommit.ToLowerInvariant()
-            Version = 'not detected (commit supplied with -TemplateCommit)'
-            Committed = 'not detected'
-            Source = 'supplied with -TemplateCommit'
+function Invoke-Git([string[]]$Arguments) {
+    Invoke-GitCommand (@('-C', $root) + $Arguments)
+}
+
+function Invoke-GitDir([string]$GitDir, [string[]]$Arguments) {
+    # An explicit --git-dir also works where safe.bareRepository=explicit protects implicit bare repositories.
+    Invoke-GitCommand (@("--git-dir=$GitDir") + $Arguments)
+}
+
+function Get-UpstreamHistory {
+    $git = Get-Command git -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $git) { throw 'Git is required to verify which template commit this copy came from. Install Git, then run again.' }
+    $directory = Join-Path ([IO.Path]::GetTempPath()) ('moorkyz-template-' + [Guid]::NewGuid().ToString('N').Substring(0, 8))
+    # Commits and tags only, no files: enough to verify commits and to recognize copies by their file tree.
+    $ErrorActionPreference = 'Continue'
+    $output = @(& $git.Source clone --bare --quiet --filter=tree:0 "$templateUrl.git" $directory 2>&1)
+    if ($LASTEXITCODE) {
+        Remove-Item -LiteralPath $directory -Recurse -Force -ErrorAction SilentlyContinue
+        throw "Cannot read $templateUrl to verify which template commit this copy came from ($((@($output | ForEach-Object { "$_" }) -join ' ').Trim())). Check the network connection, then run again."
+    }
+    $order = New-Object System.Collections.Generic.List[string]
+    $trees = @{}
+    # Assign first: the helper returns its lines as one array, which @(...) would wrap again.
+    $log = Invoke-GitDir $directory @('log', '--all', '--format=%H %T')
+    foreach ($line in @($log)) {
+        $parts = "$line".Split(' ')
+        if ($parts.Count -eq 2 -and -not $trees.ContainsKey($parts[0])) {
+            $order.Add($parts[0])
+            $trees[$parts[0]] = $parts[1]
         }
     }
-    if (-not (Test-Path -LiteralPath (Join-Path $root '.git'))) { return $null }
-    $origin = Invoke-Git @('remote', 'get-url', 'origin')
-    $expected = '^(?:https://github\.com/|git@github\.com:|ssh://git@github\.com/)' + [regex]::Escape($templateOwner) + '/' + [regex]::Escape($templateRepository) + '(?:\.git)?/?$'
-    if (-not $origin -or $origin[0] -notmatch $expected) { return $null }
-    $commit = Invoke-Git @('rev-parse', 'HEAD')
-    if (-not $commit -or $commit[0] -notmatch '^[0-9a-f]{40}$') { return $null }
-    $committed = Invoke-Git @('show', '-s', '--format=%cI', 'HEAD')
-    $version = Invoke-Git @('describe', '--tags', '--exact-match', 'HEAD')
-    if (-not $version) { $version = Invoke-Git @('describe', '--tags', 'HEAD') }
-    $changes = Invoke-Git @('status', '--porcelain', '--untracked-files=no')
-    $tree = if ($null -eq $changes) { 'not checked' } elseif ($changes.Count) { "$($changes.Count) uncommitted tracked change(s)" } else { 'clean' }
-    [pscustomobject]@{
-        Commit = $commit[0]
-        Version = if ($version) { $version[0] } else { 'untagged' }
-        Committed = if ($committed) { $committed[0] } else { 'not detected' }
-        Source = "Git origin $templateOwner/$templateRepository; working tree $tree"
+    if (-not $order.Count) {
+        Remove-Item -LiteralPath $directory -Recurse -Force -ErrorAction SilentlyContinue
+        throw "$templateUrl returned no commits, so this copy's template commit cannot be verified."
     }
+    [pscustomobject]@{ Directory = $directory; Order = $order.ToArray(); Trees = $trees }
+}
+
+function Get-TemplateVersion($History, [string]$Commit) {
+    $exact = Invoke-GitDir $History.Directory @('describe', '--tags', '--exact-match', '--match', 'v[0-9]*', $Commit)
+    if ($exact) { return "$($exact[0])".Trim() }
+    $short = $Commit.Substring(0, 7)
+    $described = Invoke-GitDir $History.Directory @('describe', '--tags', '--long', '--match', 'v[0-9]*', $Commit)
+    if ($described -and "$($described[0])" -match '^(.+)-(\d+)-g[0-9a-f]+$') {
+        $count = [int]$Matches[2]
+        return "development build $short ($count commit$(if ($count -ne 1) { 's' }) after $($Matches[1]))"
+    }
+    "development build $short (before the first release)"
+}
+
+function Find-TemplateCommit($History) {
+    if ($TemplateCommit) {
+        if ($TemplateCommit -notmatch '^[0-9a-fA-F]{40}$') { throw '-TemplateCommit must be the full 40-character template commit SHA.' }
+        $commit = $TemplateCommit.ToLowerInvariant()
+        if (-not $History.Trees.ContainsKey($commit)) {
+            throw "Commit $commit is not part of $templateUrl (no branch or tag contains it), so links and provenance would be wrong. Copy the full SHA of the template commit you started from at $templateUrl/commits, then run again."
+        }
+        return [pscustomobject]@{ Commit = $commit; Source = 'supplied with -TemplateCommit; verified in the template repository' }
+    }
+    if (Test-Path -LiteralPath (Join-Path $root '.git')) {
+        $local = Invoke-Git @('rev-list', 'HEAD')
+        for ($index = 0; $local -and $index -lt $local.Count; $index++) {
+            if (-not $History.Trees.ContainsKey($local[$index])) { continue }
+            $changes = Invoke-Git @('status', '--porcelain', '--untracked-files=no')
+            $notes = @("this repository's Git history")
+            if ($index) { $notes += "$index local commit$(if ($index -ne 1) { 's' }) after it" }
+            if ($changes -and $changes.Count) { $notes += "$($changes.Count) uncommitted tracked change$(if ($changes.Count -ne 1) { 's' })" }
+            return [pscustomobject]@{ Commit = $local[$index]; Source = ($notes -join '; ') }
+        }
+        # GitHub's "Use this template" starts a new history whose first commit has the template's exact files.
+        $firstCommits = Invoke-Git @('rev-list', '--max-parents=0', 'HEAD')
+        foreach ($first in @($firstCommits)) {
+            $tree = Invoke-Git @('rev-parse', "$first^{tree}")
+            if (-not $tree) { continue }
+            $same = @($History.Order | Where-Object { $History.Trees[$_] -eq $tree[0] })
+            if (-not $same.Count) { continue }
+            $tagged = @($same | Where-Object { Invoke-GitDir $History.Directory @('describe', '--tags', '--exact-match', '--match', 'v[0-9]*', $_) })
+            $commit = if ($tagged.Count) { $tagged[0] } else { $same[0] }
+            $note = if ($same.Count -gt 1) { "; $($same.Count) template commits have exactly these files" } else { '' }
+            return [pscustomobject]@{ Commit = $commit; Source = "the first commit has exactly the files of this template commit (GitHub template copy)$note" }
+        }
+    }
+    # GitHub ZIP downloads fill in this file through the export-subst attribute.
+    $stamp = Join-Path (Join-Path $setupDir 'helpers') 'template-commit.txt'
+    if (Test-Path -LiteralPath $stamp -PathType Leaf) {
+        $value = [IO.File]::ReadAllText($stamp).Trim().ToLowerInvariant()
+        if ($value -match '^[0-9a-f]{40}$') {
+            if (-not $History.Trees.ContainsKey($value)) {
+                throw "This copy records template commit $value, which is not part of $templateUrl. Pass -TemplateCommit with the commit you started from."
+            }
+            return [pscustomobject]@{ Commit = $value; Source = 'recorded in the GitHub download; verified in the template repository' }
+        }
+    }
+    $null
+}
+
+function Get-TemplateProvenance {
+    $history = Get-UpstreamHistory
+    try {
+        $found = Find-TemplateCommit $history
+        if (-not $found) {
+            throw "Cannot tell which template commit this copy came from. Clones of the template, repositories created with GitHub's ""Use this template"" and ZIP downloads from GitHub are recognized automatically; for any other copy pass -TemplateCommit with the full SHA of the commit you started from (see $templateUrl/commits)."
+        }
+        $committed = Invoke-GitDir $history.Directory @('show', '-s', '--format=%cI', $found.Commit)
+        [pscustomobject]@{
+            Commit = $found.Commit
+            Version = Get-TemplateVersion $history $found.Commit
+            Committed = if ($committed) { "$($committed[0])".Trim() } else { 'not detected' }
+            Source = $found.Source
+        }
+    }
+    finally { Remove-Item -LiteralPath $history.Directory -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
 function Get-AuditHistory {
@@ -323,73 +410,39 @@ function Resolve-LinkTarget([string]$Directory, [string]$Target) {
     [IO.Path]::GetFullPath((Join-Path $Directory $local)).TrimEnd('\', '/')
 }
 
-function Get-FileLinks([IO.FileInfo]$File, [string]$Text) {
-    # Same link syntax as the maintenance documentation check.
-    $directory = Split-Path -Parent $File.FullName
-    $pattern = if ($File.Extension -ieq '.html') { $htmlLink } else { $markdownLink }
-    foreach ($match in $pattern.Matches($Text)) {
-        $group = if ($match.Groups[1].Success) { $match.Groups[1] } else { $match.Groups[2] }
-        $resolved = Resolve-LinkTarget $directory $group.Value
-        if ($resolved) { [pscustomobject]@{ Target = $group.Value; Path = $resolved } }
+function Get-Node {
+    # The run tool finds or (with consent) provides the pinned Node.js; one implementation for every tool.
+    $runner = Join-Path $root '.template\run\Run.ps1'
+    if (Test-Path -LiteralPath $runner -PathType Leaf) {
+        $path = @(& $runner -RuntimeOnly | Where-Object { $_ -is [string] }) | Select-Object -Last 1
+        if ($LASTEXITCODE -eq 0 -and $path -and (Test-Path -LiteralPath $path -PathType Leaf)) { return $path }
+        throw 'Node.js is required to check references and regenerate the README editions; see the message above.'
     }
+    $command = Get-Command node -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($command) { return $command.Source }
+    throw 'Node.js 24 is required to check references and regenerate the README editions. Install Node.js 24 LTS, then run again.'
 }
 
-function Test-ExactPath([string]$FullName) {
-    if (-not (Test-Under $FullName $root)) { return $false }
-    $directory = $root
-    foreach ($part in @($FullName.Substring($root.Length) -split '[\\/]' | Where-Object { $_ })) {
-        if (-not $nameCache.ContainsKey($directory)) {
-            $nameCache[$directory] = @(if (Test-Path -LiteralPath $directory -PathType Container) { Get-ChildItem -LiteralPath $directory -Force -Name })
-        }
-        if ($nameCache[$directory] -cnotcontains $part) { return $false }
-        $directory = Join-Path $directory $part
-    }
-    $true
-}
-
-function Test-InternalLinks {
-    $nameCache.Clear()
-    $files = @(Get-ScanFiles $root @('.md', '.html'))
-    $broken = New-Object System.Collections.Generic.List[string]
-    $count = 0
-    foreach ($file in $files) {
-        foreach ($link in @(Get-FileLinks $file ([IO.File]::ReadAllText($file.FullName)))) {
-            $count++
-            if (-not (Test-ExactPath $link.Path)) { $broken.Add("$(Get-RootPath $file.FullName): $($link.Target)") }
-        }
-    }
-    [pscustomobject]@{ Files = $files.Count; Links = $count; Broken = $broken.ToArray() }
+function Get-References([string[]]$Removing = @()) {
+    # The CLI checks links and literal paths in documentation, configuration and source files.
+    $arguments = @($cliPath, 'references', '--json')
+    foreach ($entry in $Removing) { $arguments += @('--removing', $entry) }
+    $ErrorActionPreference = 'Continue'
+    Push-Location -LiteralPath $root
+    try { $json = (@(& $script:node @arguments 2>$null) -join "`n") }
+    finally { Pop-Location }
+    try { $json | ConvertFrom-Json }
+    catch { throw "The reference check returned no result: $json" }
 }
 
 function Find-RemovedReferences($Plan) {
     if (-not $Plan.Remove.Count) { return @() }
-    $targets = @($Plan.Remove | ForEach-Object { [IO.Path]::GetFullPath($_.FullName).TrimEnd('\', '/') })
-    # Root-relative path mentions, optionally prefixed with ./ or ../ segments.
-    $mentions = @(foreach ($target in $Plan.Remove) {
-        $path = (@((Get-RootPath $target.FullName) -split '/' | ForEach-Object { [regex]::Escape($_) }) -join '[/\\]')
-        $end = if ($target.PSIsContainer) { '[/\\]' } else { '(?![\w.\-])' }
-        [regex]('(?<![\w.\-/\\])(?:\.{1,2}[/\\])*' + $path + $end)
-    })
-    $found = New-Object System.Collections.Generic.List[string]
-    foreach ($file in @(Get-ScanFiles $root $null)) {
-        $full = $file.FullName
-        if ($binaryExtensions -contains $file.Extension.ToLowerInvariant() -or $file.Length -ge 5MB) { continue }
-        # Template history is replaced on adoption; project history may describe removed paths.
-        if ((Test-Under $full $auditsDir) -or (Test-Under $full $schedulerPath)) { continue }
-        if (@($targets | Where-Object { Test-Under $full $_ }).Count) { continue }
-        $text = [IO.File]::ReadAllText($full)
-        $label = Get-RootPath $full
-        if ($file.Extension -in '.md', '.html') {
-            foreach ($link in @(Get-FileLinks $file $text)) {
-                if (@($targets | Where-Object { Test-Under $link.Path $_ }).Count) { $found.Add("$label links to $($link.Target)") }
-            }
-        }
-        if (Test-Under $full $setupDir) { continue }
-        foreach ($pattern in $mentions) {
-            foreach ($match in $pattern.Matches($text)) { $found.Add("$label mentions $($match.Value)") }
-        }
-    }
-    @($found | Select-Object -Unique)
+    $scan = Get-References @($Plan.Remove | ForEach-Object { Get-RootPath $_.FullName })
+    $verb = @{ mention = 'mentions'; name = 'names' }
+    @($scan.removed | ForEach-Object {
+            $how = if ($verb.ContainsKey([string]$_.reason)) { $verb[[string]$_.reason] } else { 'links to' }
+            "$($_.file):$($_.line) $how $($_.target)"
+        })
 }
 
 function Reset-SchedulerTables([string]$Text) {
@@ -515,7 +568,7 @@ function New-AdoptionRecord($Plan, $Provenance, $Trail, $Summary) {
         "| Template audit links | $($Trail.Links) in $($Trail.Files) file(s) now point to the template commit |",
         "| Placeholder and owner replacements | $($Summary.Replaced) file(s) |",
         "| README | $(ConvertTo-Cell $Summary.Readme) |",
-        '| Internal link validation | PENDING |', ''
+        '| Reference validation | PENDING |', ''
     ) -join "`n"
 }
 
@@ -532,19 +585,14 @@ function Show-Plan($Plan, $History, $Provenance) {
         Write-Host "Audits:  start the project's own trail; $($History.Records.Count) template audit record(s) and the work-queue history are not inherited"
         Write-Host "Source:  $templateUrl at $($Provenance.Commit) (version: $($Provenance.Version); $($Provenance.Source))"
     }
-    Write-Host 'Links:   every internal Markdown/HTML link is validated afterwards'
+    Write-Host 'Checks:  links and literal paths in docs, configuration and source are validated afterwards'
 }
 
 function Invoke-Setup {
     $plan = Read-Config
     $history = Get-AuditHistory
-    $provenance = $null
-    if (-not $history.Initialized) {
-        $provenance = Get-TemplateProvenance
-        if (-not $provenance) {
-            throw "Cannot tell which template commit this copy came from: it is not a Git clone with origin $templateOwner/$templateRepository. Pass -TemplateCommit with the full SHA of the template commit you copied (see $templateUrl/commits), or claim a fresh clone of the template before changing its origin."
-        }
-    }
+    $script:node = Get-Node
+    $provenance = if ($history.Initialized) { $null } else { Get-TemplateProvenance }
     $references = @(Find-RemovedReferences $plan)
     if ($references.Count) {
         $shown = @($references | Select-Object -First 40)
@@ -625,34 +673,23 @@ function Invoke-Setup {
         }
         if ($retitled) { Write-Host "README title set to '$($plan.DisplayName)'." }
         $summary.Readme = "title set to '$($plan.DisplayName)'"
-        $node = Get-Command node -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
         if ((Test-Path -LiteralPath (Join-Path $root 'README.html')) -and (Test-Path -LiteralPath $cliPath)) {
-            if ($node) {
-                Push-Location $root
-                try {
-                    & $node.Source $cliPath readme
-                    if ($LASTEXITCODE) { throw "README generation failed (exit $LASTEXITCODE)." }
-                } finally { Pop-Location }
-                $summary.Readme += '; README.html regenerated'
-            } else {
-                Write-Warning 'Node.js not found: run "node moorkyz readme" to regenerate README.html.'
-                $summary.Readme += '; README.html not regenerated (Node.js not found)'
-            }
+            Push-Location $root
+            try {
+                & $script:node $cliPath readme
+                if ($LASTEXITCODE) { throw "README generation failed (exit $LASTEXITCODE)." }
+            } finally { Pop-Location }
+            $summary.Readme += '; README.html regenerated'
         }
         # The design collection's README editions are generated from README.md as well.
         $designBuilder = Join-Path (Join-Path $root 'designs') 'build.mjs'
         if (Test-Path -LiteralPath $designBuilder -PathType Leaf) {
-            if ($node) {
-                Push-Location $root
-                try {
-                    & $node.Source $designBuilder
-                    if ($LASTEXITCODE) { throw "Design collection generation failed (exit $LASTEXITCODE)." }
-                } finally { Pop-Location }
-                $summary.Readme += '; design README editions regenerated'
-            } else {
-                Write-Warning 'Node.js not found: run "node designs/build.mjs" to regenerate the README editions.'
-                $summary.Readme += '; design README editions not regenerated (Node.js not found)'
-            }
+            Push-Location $root
+            try {
+                & $script:node $designBuilder
+                if ($LASTEXITCODE) { throw "Design collection generation failed (exit $LASTEXITCODE)." }
+            } finally { Pop-Location }
+            $summary.Readme += '; design README editions regenerated'
         }
     }
 
@@ -665,28 +702,30 @@ function Invoke-Setup {
         Write-Host "Adoption record: $(Get-RootPath $trail.RecordPath)"
     }
 
-    $validation = Test-InternalLinks
-    $result = if ($validation.Broken.Count) {
-        "FAIL: $($validation.Broken.Count) of $($validation.Links) local links in $($validation.Files) Markdown/HTML files are broken: " +
-            ((@($validation.Broken | Select-Object -First 20) | ForEach-Object { '`' + (ConvertTo-Cell $_) + '`' }) -join ', ')
+    $validation = Get-References
+    $broken = @($validation.broken | ForEach-Object { "$($_.file):$($_.line): $($_.target)" })
+    $unverified = @($validation.unverified).Count
+    $result = if ($broken.Count) {
+        "FAIL: $($broken.Count) of $($validation.checked) references in $($validation.files) files are broken: " +
+            ((@($broken | Select-Object -First 20) | ForEach-Object { '`' + (ConvertTo-Cell $_) + '`' }) -join ', ')
     } else {
-        "PASS: $($validation.Links) local links in $($validation.Files) Markdown/HTML files resolve with exact casing"
+        "PASS: $($validation.checked) references in $($validation.files) files resolve with exact casing; $unverified dynamic or base-relative path expressions cannot be checked statically"
     }
     $recordPath = if ($trail) { $trail.RecordPath } else { $history.Record }
     if ($recordPath -and (Test-Path -LiteralPath $recordPath -PathType Leaf)) {
-        # Until links pass, every run records its result, so the committed record matches the committed tree.
+        # Until references pass, every run records its result, so the committed record matches the committed tree.
         if (-not $trail) {
             $result += " (rerun at $((Get-Date).ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", [Globalization.CultureInfo]::InvariantCulture)) after the first validation did not pass)"
         }
         $recordText = [IO.File]::ReadAllText($recordPath)
-        $recordUpdate = ([regex]'(?m)^\| Internal link validation \| (?!PASS)[^\r\n]*').Replace($recordText, "| Internal link validation | $result |".Replace('$', '$$'), 1)
+        $recordUpdate = ([regex]'(?m)^\| Reference validation \| (?!PASS)[^\r\n]*').Replace($recordText, "| Reference validation | $result |".Replace('$', '$$'), 1)
         if ($recordUpdate -cne $recordText) { [IO.File]::WriteAllText($recordPath, $recordUpdate, $utf8) }
     }
-    if ($validation.Broken.Count) {
-        $shown = @($validation.Broken | Select-Object -First 40)
-        throw "Adoption applied, but $($validation.Broken.Count) internal link(s) are broken:`n  - $($shown -join "`n  - ")`nFix them, then run this script again; it validates again and updates the adoption record."
+    if ($broken.Count) {
+        $shown = @($broken | Select-Object -First 40)
+        throw "Adoption applied, but $($broken.Count) reference(s) are broken:`n  - $($shown -join "`n  - ")`nFix them, then run this script again; it validates again and updates the adoption record."
     }
-    Write-Host "Links:   PASS - $($validation.Links) local links in $($validation.Files) Markdown/HTML files"
+    Write-Host "Checks:  PASS - $($validation.checked) references in $($validation.files) files"
     Write-Host 'Setup complete. Review the result with git status before committing.'
 }
 

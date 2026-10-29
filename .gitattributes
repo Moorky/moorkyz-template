@@ -13,3 +13,6 @@
 *.woff2 binary
 *.pdf binary
 *.zip binary
+
+# GitHub ZIP downloads record their template commit here (read by Claim Template).
+.template/claim-template/helpers/template-commit.txt export-subst

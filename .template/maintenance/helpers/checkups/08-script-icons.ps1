@@ -14,9 +14,13 @@ if ($env:OS -eq 'Windows_NT') {
         if ($command -and $engines -notcontains $command.Source) { $engines += $command.Source }
     }
 }
-$workspace = Join-Path ([IO.Path]::GetTempPath()) ('moorkyz script icons ' + [Guid]::NewGuid().ToString('N'))
+$workspace = Join-Path ([IO.Path]::GetTempPath()) ('mz icons ' + [Guid]::NewGuid().ToString('N').Substring(0, 8))
 [void][IO.Directory]::CreateDirectory($workspace)
 $groups = 0
+
+function New-Name([string]$Suffix) {
+    [Guid]::NewGuid().ToString('N').Substring(0, 8) + $Suffix
+}
 
 function Assert-True([bool]$Condition, [string]$Message) {
     if (-not $Condition) { throw $Message }
@@ -42,7 +46,7 @@ function Invoke-Tool([string]$Engine, [string]$Directory, [string]$Flags = '') {
 
 try {
     foreach ($engine in $engines) {
-        $fixture = Join-Path $workspace ([Guid]::NewGuid().ToString('N') + " repo's & spaces")
+        $fixture = Join-Path $workspace (New-Name " repo's & spaces")
         $fixtureTool = Join-Path $fixture '.template\script-icons'
         [void][IO.Directory]::CreateDirectory((Split-Path -Parent $fixtureTool))
         Copy-Item -LiteralPath $tool -Destination $fixtureTool -Recurse
@@ -99,7 +103,7 @@ try {
         Assert-True ($result.Code -eq 0) $result.Text
         Assert-True ((Get-Snapshot $fixture -SkipOutput) -ceq $before) 'Icon generation modified original source.'
         $output = Join-Path $fixture '.moorkyz\script-icons'
-        $inventory = @(Get-Content -LiteralPath (Join-Path $output 'inventory.json') -Raw | ConvertFrom-Json)
+        $inventory = @(Get-Content -LiteralPath (Join-Path $output 'inventory.json') -Raw | ConvertFrom-Json | ForEach-Object { $_ })
         $launchers = @($inventory | Where-Object Status -eq 'Shortcut')
         $skipped = @($inventory | Where-Object Status -eq 'Skipped')
         Assert-True ($launchers.Count -eq 11) "Expected 11 runnable shortcuts; found $($launchers.Count)."
@@ -150,7 +154,7 @@ try {
         Assert-True ((Get-Snapshot $fixture) -ceq $after) 'Rerun overwrote existing output.'
         $groups++
 
-        $blocked = Join-Path $workspace ([Guid]::NewGuid().ToString('N') + ' blocked')
+        $blocked = Join-Path $workspace (New-Name ' blocked')
         [void][IO.Directory]::CreateDirectory((Join-Path $blocked '.template'))
         Copy-Item -LiteralPath $tool -Destination (Join-Path $blocked '.template\script-icons') -Recurse
         [IO.File]::WriteAllText((Join-Path $blocked '.moorkyz'), 'existing user file')
@@ -160,8 +164,8 @@ try {
         Assert-True ((Get-Snapshot $blocked) -ceq $beforeBlocked) 'Output conflict changed user data.'
         $groups++
 
-        $linked = Join-Path $workspace ([Guid]::NewGuid().ToString('N') + ' linked')
-        $outside = Join-Path $workspace ([Guid]::NewGuid().ToString('N') + ' outside')
+        $linked = Join-Path $workspace (New-Name ' linked')
+        $outside = Join-Path $workspace (New-Name ' outside')
         [void][IO.Directory]::CreateDirectory((Join-Path $linked '.template'))
         [void][IO.Directory]::CreateDirectory($outside)
         Copy-Item -LiteralPath $tool -Destination (Join-Path $linked '.template\script-icons') -Recurse
@@ -188,7 +192,7 @@ try {
         $result = Invoke-Tool $engine $linked
         Assert-True ($result.Code -eq 0) $result.Text
         $singletonJson = Get-Content -LiteralPath (Join-Path $linked '.moorkyz\script-icons\inventory.json') -Raw
-        Assert-True ($singletonJson -match '^\s*\[' -and @($singletonJson | ConvertFrom-Json).Count -eq 1) 'Single-script inventory must remain a JSON array.'
+        Assert-True ($singletonJson -match '^\s*\[' -and @($singletonJson | ConvertFrom-Json | ForEach-Object { $_ }).Count -eq 1) 'Single-script inventory must remain a JSON array.'
         $groups++
 
         $missingIcon = Join-Path $blocked '.template\script-icons\helpers\moorkyz.ico'
@@ -197,6 +201,48 @@ try {
         $result = Invoke-Tool $engine $blocked
         Assert-True ($result.Code -ne 0 -and $result.Text -match 'Missing shortcut icon') $result.Text
         Assert-True ((Get-Snapshot $blocked) -ceq $beforeMissingIcon) 'Missing icon caused writes.'
+        $groups++
+
+        # A root above 100 characters works; a shortcut beyond the shell limit is skipped explicitly.
+        $deepRoot = Join-Path $workspace (New-Name ' long')
+        $pad = 160 - $deepRoot.Length - 1
+        if ($pad -lt 1) { throw "TEMP is too long ($($workspace.Length) characters) for the long-path regression; use a TEMP path below 125 characters." }
+        $deepRoot = Join-Path $deepRoot ('p' * $pad)
+        [void][IO.Directory]::CreateDirectory((Join-Path $deepRoot '.template'))
+        Copy-Item -LiteralPath $tool -Destination (Join-Path $deepRoot '.template\script-icons') -Recurse
+        $nearName = 'run.cmd'
+        $farName = 'nested-folder-for-long-path-checks\' + ('x' * 51) + '.cmd'
+        foreach ($name in $nearName, $farName) {
+            $path = Join-Path $deepRoot $name
+            [void][IO.Directory]::CreateDirectory((Split-Path -Parent $path))
+            [IO.File]::WriteAllText($path, '@exit /b 99')
+        }
+        $farNeeds = $deepRoot.Length + '\.moorkyz\script-icons\'.Length + $farName.Length + '.lnk'.Length
+        Assert-True ($farNeeds -gt 259 -and (Join-Path $deepRoot $farName).Length -lt 260) "Fixture lengths drifted: shortcut $farNeeds."
+        $beforeLong = Get-Snapshot $deepRoot
+        $result = Invoke-Tool $engine $deepRoot
+        Assert-True ($result.Code -eq 0) $result.Text
+        $longInventory = @(Get-Content -LiteralPath (Join-Path $deepRoot '.moorkyz\script-icons\inventory.json') -Raw | ConvertFrom-Json | ForEach-Object { $_ })
+        $near = @($longInventory | Where-Object File -eq $nearName)
+        $far = @($longInventory | Where-Object File -eq $farName)
+        Assert-True ($near.Count -eq 1 -and $near[0].Status -eq 'Shortcut') "A shortcut below the limit must be created under a $($deepRoot.Length)-character root."
+        Assert-True ($far.Count -eq 1 -and $far[0].Status -eq 'Skipped' -and -not $far[0].Shortcut -and
+            $far[0].Reason -match "up to 259 characters; this one needs $farNeeds\.") "Long shortcut must be skipped with its reason: $($far | ConvertTo-Json -Compress)"
+        Assert-True ($result.Text.Contains("[SKIP] ${farName}: Windows shortcuts")) 'The skipped long path must be reported.'
+        Assert-True (@(Get-ChildItem -LiteralPath (Join-Path $deepRoot '.moorkyz\script-icons') -Filter '*.lnk' -Recurse).Count -eq
+            @($longInventory | Where-Object Status -eq 'Shortcut').Count) 'Shortcut files differ from the inventory.'
+        $shell = New-Object -ComObject WScript.Shell
+        try {
+            $link = $shell.CreateShortcut($near[0].Shortcut)
+            try {
+                Assert-True ($link.TargetPath -ieq (Join-Path $deepRoot $nearName)) 'Long-root shortcut target was truncated or changed.'
+                Assert-True ($link.WorkingDirectory -ieq $deepRoot) 'Long-root working directory was truncated or changed.'
+                Assert-True ($link.IconLocation -ieq ((Join-Path $deepRoot '.template\script-icons\helpers\moorkyz.ico') + ',0')) 'Long-root icon was truncated or changed.'
+            }
+            finally { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($link) }
+        }
+        finally { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell) }
+        Assert-True ((Get-Snapshot $deepRoot -SkipOutput) -ceq $beforeLong) 'Long-path run modified original source.'
         $groups++
         Write-Host "[PASS] Script icon properties and safety on $engine"
     }

@@ -36,6 +36,12 @@ The output is local runtime data, not a portable binary committed to Git.
   Script Host refused to save direct COM-target shortcuts in local verification.
 - `.git`, dependencies, generated build output and ignored runtime directories
   are excluded. Symlinks/junctions in source or output paths are refused.
+- Windows shortcuts are limited to 259-character paths: Windows Script Host
+  cannot save a shortcut at a longer path, silently truncates longer targets,
+  and Explorer cannot open shortcuts stored beyond that length. Such entries are
+  planned as skipped before anything is written; the `[SKIP]` line and
+  `inventory.json` state the length they would need. Move the repository to a
+  shorter folder to include them. Long repository roots below the limit work.
 - Every shortcut runs from the repository root. PowerShell shortcuts use the
   host that created them with `-NoLogo -NoProfile -NoExit -File`; execution
   policy is not bypassed. Node shortcuts use the installed `node` resolved

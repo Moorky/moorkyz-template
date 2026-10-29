@@ -175,6 +175,10 @@ globalThis.MoorkyzSearchIndex = {
    "title": "Start a new project"
   },
   {
+   "id": "versions",
+   "title": "Versions"
+  },
+  {
    "id": "template-readiness",
    "title": "Template readiness"
   },

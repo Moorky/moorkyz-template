@@ -13,18 +13,18 @@ This guide is the map, not the rulebook: for agents, [AGENTS.md](AGENTS.md) is a
 
 ### Everyone: first ten minutes
 
-1. Install Git, Node.js 24 LTS (the major version is pinned in `.node-version`) and PowerShell 7 (`pwsh`). Windows PowerShell 5.1 also runs the tools; Linux uses PowerShell 7. The template itself needs no package installation.
-2. From the repository root, confirm the toolchain and list the commands:
+1. Install Git and PowerShell 7 (`pwsh`); Windows PowerShell 5.1 also runs the tools, and Linux uses PowerShell 7. Shared tooling needs Node.js 24 LTS (the major version is pinned in `.node-version`). On Windows, RUN.cmd can provide it.
+2. Double-click [RUN.cmd](RUN.cmd), or run `.\RUN.cmd`. The first run checks the runtime, files and tests, then opens the template website; close the window to stop it. Later runs repeat only what changed. See the [run guide](.template/run/README.md).
+3. From the repository root, list the commands:
 
    ```powershell
    node --version     # the checks require v24.x
    node .\moorkyz help
-   node .\moorkyz doctor
+   node .\moorkyz version
    pwsh -NoProfile -File .\.template\maintenance\RunCheckups.ps1 -DryRun
    ```
 
-3. Run the full checks once: `pwsh -NoProfile -File .\.template\maintenance\RunCheckups.ps1 -NoPause`. They take several minutes and, on Windows, briefly open and drive the soft-copy window inside disposable fixtures.
-4. Open the [template catalog](index.html) or the [design showcase](designs/index.html) in a browser to see the template library.
+4. Run the full checks once: `pwsh -NoProfile -File .\.template\maintenance\RunCheckups.ps1 -NoPause`. They take several minutes and, on Windows, briefly open and drive the soft-copy window inside disposable fixtures.
 5. Continue with the section for your role, then [common tasks](#common-tasks).
 
 ### Developers
@@ -42,7 +42,7 @@ This guide is the map, not the rulebook: for agents, [AGENTS.md](AGENTS.md) is a
 1. **Read in this order:** AGENTS.md, the [work queue](AGENT_SCHEDULER.md) (picking rules and current rows), the [work steps](CONTRIBUTING.md#work-steps), the [tool catalog](.template/README.md) and only the tool guides your task needs, then the affected source, consumers, documentation and checks.
 2. **Inspect shared state first.** Run `git status --short` and `git log -5`. Other sessions may own uncommitted files. The queue records claims but is not a lock, and claims can be stale. Never take over, stage, revert or reformat someone else's work without a recorded handoff or owner direction.
 3. **Record, then claim.** Add the owner request to the ledger, claim one item with your session ID, UTC time and file scope, and keep every table cell on one line.
-4. **Use the required toolchain.** Put Node.js 24 first on `PATH` (`node --version`); older Node versions fail the checks. While iterating, run a single checkup directly, for example `pwsh -NoProfile -File .\.template\maintenance\helpers\checkups\06-design-collection.ps1`; run the full runner before completion.
+4. **Use the required toolchain.** Put Node.js 24 first on `PATH` (`node --version`); older Node versions fail the checks. `.\.template\run\Run.ps1 -RuntimeOnly` prints the path of a Node.js 24 it found or kept. While iterating, run a single checkup directly, for example `pwsh -NoProfile -File .\.template\maintenance\helpers\checkups\06-design-collection.ps1`; run the full runner before completion. Do not start `RUN.cmd` to verify work: it keeps the program in the foreground. Use `node moorkyz up --no-start` for the same checks and `node moorkyz references` after moving, renaming or deleting files.
 5. **Never hand-edit generated files.** Regenerate them from their sources; see [generated files](#generated-files-and-their-sources).
 6. **Stage only your own changes.** In a shared tree, stage the files you own; for shared files such as the queue, stage only your hunks (`git add -p`, or an index blob built from `HEAD` plus your rows). Run `git diff --cached --check` before committing.
 7. **Finish with evidence.** Fill the audit with the actual commands and results, release or hand off the claim, commit locally and report the commit hash and remaining risks. Pushing, deploying and other external actions need explicit owner approval.
@@ -52,11 +52,13 @@ This guide is the map, not the rulebook: for agents, [AGENTS.md](AGENTS.md) is a
 
 | I want to… | Do this | Details |
 |---|---|---|
-| Start a new product from the template | Clone the repository, fill in `setup.config.json`, preview `CreateProject.ps1 -WhatIf`, then apply once in the clone; commit with its adoption record | [Adoption route](#choose-the-appropriate-adoption-route) |
+| Run the project | Double-click `RUN.cmd`, or `node moorkyz up`; later runs repeat only what changed | [Run guide](.template/run/README.md) |
+| Start a new product from the template | Clone it, use GitHub's *Use this template* or download the ZIP; fill in `setup.config.json`, preview `CreateProject.ps1 -WhatIf`, then apply once in the copy; commit with its adoption record | [Adoption route](#choose-the-appropriate-adoption-route) |
 | Bring selected files into an existing repository | `CopyTemplate.ps1` (GUI, or `-NoGui -TargetDirectory … -File … -WhatIf`); undo with `-Revert` | [Soft copy](.template/soft-copy/README.md) |
 | Add a stack or tooling preset later | `SetProjectType.cmd` (menu) or `SetProjectType.ps1 node web -WhatIf` | [Project types](.template/project-types/README.md) |
 | Configure VS Code and Copilot for one repository | `Setup-CopilotProject.ps1 -ProjectPath <repo> -Scope Project -WhatIf`, then without `-WhatIf` | [Copilot settings](.template/copilot-settings/README.md) |
 | Check everything | `pwsh -NoProfile -File .\.template\maintenance\RunCheckups.ps1 -NoPause` | [Maintenance](.template/maintenance/README.md) |
+| Move, rename or delete files safely | `node moorkyz references` afterwards; `--removing <path>` lists everything that still uses a path before you delete it | [CLI guide](docs/INFRASTRUCTURE.md) |
 | Change the README | Edit `README.md`, run `node moorkyz readme` and `node designs/build.mjs`, then maintenance | [Generated files](#generated-files-and-their-sources) |
 | Record task evidence | `node moorkyz audit "task title"`, then fill every section with real results | [Audit template](docs/AUDIT_TEMPLATE.md) |
 | Delegate work | Task brief or change request form; record the request in the ledger | [Task brief](docs/TASK_BRIEF_TEMPLATE.md) |
@@ -68,7 +70,8 @@ This guide is the map, not the rulebook: for agents, [AGENTS.md](AGENTS.md) is a
 | Run a Node application with managed ports and logs | Select the `node` preset, add real scripts, then `node moorkyz start`, `logs` and `stop` | [CLI reference](#cli-command-reference) |
 | Give the tools the Moorkyz icon in Explorer | `SetScriptIcons.ps1 -WhatIf`, then without `-WhatIf` | [Script icons](.template/script-icons/README.md) |
 | Report a bug or a vulnerability | Bug report form; vulnerabilities only through private reporting | [SECURITY.md](SECURITY.md) |
-| Release or deploy | Not automated: obtain explicit owner approval first; the template website follows its own contract | [Deployment contract](website/deploy/README.md) |
+| Release the template | Pass every release check, add the changelog entry, then tag after owner approval | [Release the template](#release-the-template) |
+| Deploy | Not automated: obtain explicit owner approval first; the template website follows its own contract | [Deployment contract](website/deploy/README.md) |
 
 ## Generated files and their sources
 
@@ -131,6 +134,9 @@ A typical flow: task brief or change request, optional design, implementation, a
 | [README.md](README.md) | Canonical quick start, adoption, layout, storage and verification guide. |
 | [README.html](README.html) | Generated browser edition of the root Markdown; regenerate with `node moorkyz readme`. |
 | [moorkyz](moorkyz) | Self-contained, dependency-free CLI and embedded storage library. It must stay at root. |
+| [RUN.cmd](RUN.cmd) | Double-click launcher for the [run tool](.template/run/README.md): runtime, files, packages and checks, then the program. A thin root exception like the CLI. |
+| [moorkyz.config.json](moorkyz.config.json) | The programs RUN.cmd and the CLI know; this template ships its website as a static program with its checks. |
+| [.template/CHANGELOG.md](.template/CHANGELOG.md) | Template releases, newest first; a release is a `vMAJOR.MINOR.PATCH` tag. |
 | [.template/README.md](.template/README.md) | Catalog of versioned reusable tools; entrypoints and guides sit together, support files under `helpers/`. |
 | [docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md) | Detailed CLI, configuration, process ownership and storage contract. |
 | [docs/dependency-security.md](docs/dependency-security.md) | Dependency and workflow maintenance guidance for the baseline and adopted products. |
@@ -162,22 +168,22 @@ The local `.logs/`, `.archive/` and `.moorkyz/` directories are ignored runtime 
 
 ## Choose the appropriate adoption route
 
-For a **new product**, clone the repository, retain its useful conventions, then use [Claim Template](.template/claim-template/README.md) in that clone before pointing its `origin` at the new repository. Do not apply adoption to the template repository itself.
+For a **new product**, start from a clone of the repository, a repository created with GitHub's *Use this template* (once the template repository is marked as a template in its GitHub settings) or a ZIP download from GitHub; retain its useful conventions, then use [Claim Template](.template/claim-template/README.md) in that copy. Do not apply adoption to the template repository itself.
 
 1. Review `.template/claim-template/helpers/setup.config.json`.
 2. Fill in `projectName`, `displayName` and `githubOwner`; keep `projectTypes` and `remove` as JSON arrays (`[]` when empty).
-3. Preview with `CreateProject.ps1 -WhatIf`, then review the plan before applying it. Add `-TemplateCommit <full SHA>` only for a copy without the template's Git history.
+3. Preview with `CreateProject.ps1 -WhatIf`, then review the plan before applying it. Add `-TemplateCommit <full SHA>` only for a copy that is none of the three above.
 4. Commit the result together with the generated adoption record in `.audits/`.
 5. Document the actual product stack; add only the required presets, packages, application scripts and authoritative lockfile.
 6. Retain appropriate checkups, regenerate affected documentation, and verify the adopted product separately.
 
 `projectName` uses lowercase letters/digits separated by single hyphens, up to 100 characters; the placeholder name `moorkyz-project` is explicitly refused. `displayName` is a nonempty one-line title, up to 100 characters. `githubOwner` identifies the actual owner. `projectTypes` is `[]` for no presets or an array of existing type names. The shipped config contains no placeholder text: both names are empty, so validation lists them until they are filled in, and both lists are empty arrays. A string where a list belongs is rejected. When no types are configured, an interactive run offers the existing project-type menu (several types or none); the selection is validated like a hand-written configuration and saved to the config once the plan is confirmed.
 
-Adoption copies the selected presets, permanently removes only explicitly listed paths, replaces the project/owner placeholders in eligible text and updates the README title. It regenerates `README.html` and the design README editions when Node and the retained files are available; otherwise review the warning and regenerate separately. A `remove` path is refused while any remaining file links to or mentions it, and `.audits` cannot be removed. Runtime directories, `.audits/`, commit-pinned template links and the adoption folder are excluded from text replacement. Explicit `remove` entries can still delete runtime directories, so review every removal. Differing existing preset targets are refused before copying. Reruns support recovery from an incomplete adoption; filesystem failures can still leave partial work.
+Adoption copies the selected presets, permanently removes only explicitly listed paths, replaces the project/owner placeholders in eligible text and updates the README title. It regenerates `README.html` and the design README editions with the Node.js the [run tool](.template/run/README.md) finds or provides. A `remove` path is refused while any remaining file links to, mentions or names it, and `.audits` cannot be removed. Runtime directories, `.audits/`, commit-pinned template links and the adoption folder are excluded from text replacement. Explicit `remove` entries can still delete runtime directories, so review every removal. Differing existing preset targets are refused before copying. Reruns support recovery from an incomplete adoption; filesystem failures can still leave partial work.
 
-**Adopted projects start their own audit trail.** The first adoption does not inherit the template's audit records or work-queue history: the template records stay in the template repository, links to them (such as the evidence in this guide) are pointed to the template commit on GitHub, the request ledger and work queue keep only their example rows, and `.audits/` gets a clean README plus an adoption record. That record preserves the template repository, version (the Git tag, or `untagged`) and commit SHA, read from Git when the clone's `origin` is the template or taken from `-TemplateCommit`. Finally every internal Markdown/HTML link is validated; broken links are listed and the run ends with an error until they are fixed, and the rerun after the fix records the passing result in the adoption record. Reruns keep the project's own trail.
+**Adopted projects start their own audit trail.** The first adoption does not inherit the template's audit records or work-queue history: the template records stay in the template repository, links to them (such as the evidence in this guide) are pointed to the template commit on GitHub, the request ledger and work queue keep only their example rows, and `.audits/` gets a clean README plus an adoption record. That record preserves the template repository, version (the release tag such as `v1.0.0`, or the development build and its distance from the last release) and commit SHA. The commit is found from the copy's Git history, a GitHub template copy's first commit, the stamp in a GitHub ZIP download or `-TemplateCommit`, and is always verified in the template repository; a commit that no branch or tag there contains is refused instead of producing wrong links. Finally links and literal paths in docs, configuration and source are validated; broken ones are listed and the run ends with an error until they are fixed, and the rerun after the fix records the passing result in the adoption record. Reruns keep the project's own trail.
 
-**Keep the tools after claiming.** `.template/claim-template` is used once but should stay: the tool catalog, the project-type guide and the README editions link to it, so deleting it alone breaks those links. The same applies to any linked area, such as `designs/`, `website/` or a tool folder. To drop an optional area, list it in `remove` only after removing or updating every file that references it (find them with `git grep -n "<folder>"`), including its dedicated checkup or workflow; the adoption pre-check lists anything left.
+**Keep the tools after claiming.** `.template/claim-template` is used once but should stay: the tool catalog, the project-type guide and the README editions link to it, so deleting it alone breaks those links. The same applies to any linked area, such as `designs/`, `website/` or a tool folder. To drop an optional area, list it in `remove` only after removing or updating every file that references it (list them with `node moorkyz references --removing <folder>`), including its dedicated checkup or workflow; the adoption pre-check lists anything left.
 
 For an **existing product**, use [Soft copy](.template/soft-copy/README.md) to choose individual template files without claiming or renaming the target. For **later stack additions**, use [Project types](.template/project-types/README.md). For **editor settings only**, use [Copilot settings](.template/copilot-settings/README.md).
 
@@ -187,9 +193,10 @@ Run from the repository root unless the tool guide says otherwise. PowerShell sc
 
 | Tool | Entrypoint and supporting files | Options and effect |
 |---|---|---|
+| [Run](.template/run/README.md) | `RUN.cmd` at the root, `.template/run/Run.ps1` | Program name, `--no-start`, `--no-open`, `--force`; `-Yes` downloads Node.js without asking, `-RuntimeOnly` prints its path, `-DryRun`. Provides the pinned Node.js (verified download with consent), then runs `moorkyz up`. |
 | [Maintenance](.template/maintenance/README.md) | `.template/maintenance/RunCheckups.ps1`; `helpers/checkups/` | `-NoPause` for automation; `-DryRun` lists checkups. Executes ordered checks in separate processes, streams results, continues after failures, returns 0 only when all pass. |
 | [Project types](.template/project-types/README.md) | `.template/project-types/SetProjectType.ps1`, `SetProjectType.cmd`; `helpers/types/` | Positional type names; `-WhatIf` previews validated input; `-DryRun` performs no action. Without names, opens the selection menu. |
-| [Claim Template](.template/claim-template/README.md) | `.template/claim-template/CreateProject.ps1`; `helpers/setup.config.json` | `-WhatIf`, `-DryRun`, `-NoPause`, `-Yes`. Normal action asks for confirmation; `-Yes` skips that question for an already reviewed plan. |
+| [Claim Template](.template/claim-template/README.md) | `.template/claim-template/CreateProject.ps1`; `helpers/setup.config.json`, `helpers/template-commit.txt` | `-WhatIf`, `-DryRun`, `-NoPause`, `-Yes`, `-TemplateCommit`. Normal action asks for confirmation; `-Yes` skips that question for an already reviewed plan. |
 | [Soft copy](.template/soft-copy/README.md) | `.template/soft-copy/CopyTemplate.ps1`; `helpers/CopyCore.ps1`, `CopyGui.ps1`, `CopyUndo.ps1` | `-TargetDirectory`, `-File`, `-NoGui`, `-ForceCopy`, `-Revert`, `-WhatIf`, `-DryRun`. Windows GUI requires STA; explicit command-line selections also work without the GUI. |
 | [Copilot settings](.template/copilot-settings/README.md) | `.template/copilot-settings/Setup-CopilotProject.ps1`; configuration and agent/BYOK examples under `helpers/` | `-ProjectPath`, `-Scope`, `-ConfigPath`, `-VSCode`, `-WhatIf`, `-NoPause`, `-DryRun`. Configures reviewed editor settings, not sign-in or service availability. |
 | [Script icons](.template/script-icons/README.md) | `.template/script-icons/SetScriptIcons.ps1`; `helpers/moorkyz.ico` | `-WhatIf` discovers and validates the plan; `-DryRun` loads without discovery. Windows only. Creates local `.lnk` shortcuts with the Moorkyz icon plus `inventory.json` under ignored `.moorkyz/script-icons/`; never edits scripts, executables or file associations, and refuses to overwrite existing output. |
@@ -253,11 +260,17 @@ The launcher operates on the shell's current working directory, even when the la
 
 Package commands select the nearest declared `packageManager`, otherwise detect pnpm/npm/Yarn lockfiles inside the root, otherwise default to pnpm. Competing lockfiles require a declaration. The manager must already exist; version detection does not install or enforce it. Reproducible installs use npm `ci`, pnpm frozen lockfile, Yarn Classic frozen lockfile or modern Yarn immutable mode. Scripts run in the configured project directory; installs run at the manager root.
 
-`verify` fallback order is `format:check`, `lint`, `typecheck`, `test`, `build`. A declared `verify` or `validate` replaces that fallback, rather than running in addition. The stack-neutral baseline has no package scripts: its direct verification entry is maintenance. Product migrations, Git operations and deployment remain separate workflows.
+`verify` fallback order is `format:check`, `lint`, `typecheck`, `test`, `build`. A declared `verify` or `validate` replaces that fallback, rather than running in addition; configured `checks` replace both. The stack-neutral baseline has no package scripts: maintenance is its full verification, and `up` runs the website's configured checks. Product migrations, Git operations and deployment remain separate workflows.
+
+| Command | Options/defaults | Exact action |
+|---|---|---|
+| `up [name]` | `--no-start`, `--no-open`, `--force` | Runtime, files, packages and checks, each repeated only when its inputs changed (cache in `.moorkyz/<name>.up.json`), then the program in the foreground. What RUN.cmd runs. |
+| `references` | `--unverified`, `--json`, `--removing <path>` (repeatable) | Check links and literal file paths in Markdown, HTML, CSS, scripts, JSON, YAML, PowerShell, batch files and Dockerfiles with exact casing; report dynamic or base-relative paths as not verified; list uses of paths about to be removed. Exit 1 on findings. |
+| `version` | — | The release tag at `HEAD`, or the development build (commit, distance from the last release, local changes). |
 
 ## CLI project configuration
 
-`moorkyz.config.json` is optional. A Node pack includes an example to adapt; copying it unchanged requires the example application directories to exist. Configuration paths must remain inside the current project root.
+`moorkyz.config.json` is optional; this template ships one for its website. A Node pack includes an example to adapt; copying it unchanged requires the example application directories to exist. Configuration paths must remain inside the current project root.
 
 | Key | Default | Meaning/constraints |
 |---|---|---|
@@ -266,7 +279,10 @@ Package commands select the nearest declared `packageManager`, otherwise detect 
 | `projects.<name>.cwd` | `.` | Existing in-scope directory. |
 | `projects.<name>.dev` | `dev` | Package script for development mode. |
 | `projects.<name>.prod` | `start` | Package script for production mode. |
-| `projects.<name>.url` | `http://localhost:3000` | HTTP(S) URL without embedded credentials; determines the configured port. |
+| `projects.<name>.static` | Unset | Folder to serve as a static program with `up`, instead of package scripts. |
+| `projects.<name>.open` | `index.html` | Start page inside the static folder; no hidden or parent segments. |
+| `projects.<name>.checks` | Unset | Up to 20 commands as argument arrays, such as `["node", "website/verify.mjs"]`, run from the root without a shell; they replace the package-script checks. |
+| `projects.<name>.url` | `http://localhost:3000`; static programs `http://127.0.0.1:4173` | HTTP(S) URL without embedded credentials; determines the configured port. |
 | `projects.<name>.portArgs` | Vite/Astro detection, otherwise empty | Safe argument-token array; `{port}` is substituted. Vite gets strict-port behavior. |
 | `projects.<name>.startupTimeoutMs` | `20000` | Milliseconds; integer 1000–300000. |
 | `storage` | Policy below | Validated policy; unknown storage keys fail explicitly. |
@@ -374,7 +390,7 @@ The repository publishes its own template library as a static website. This area
 | [website/deploy/](website/deploy/README.md) | Static container (Node 24 build stage, unprivileged Nginx on port 8080, `/healthz` and `/version.json`), publication allowlist, HTTP verifier and the Coolify, Hetzner and Cloudflare contract for `template.moorkyz.com`. |
 | [template-website.yml](.github/workflows/template-website.yml) | CI for the catalog, viewer, packaging, a hardened real container and full maintenance. It holds no deployment credentials and does not deploy. |
 
-Production activation, DNS, TLS and webhooks need an authorized operator and explicit owner approval. The package and its CI are not evidence of a live deployment; the deployment contract records the current status.
+Production activation, DNS, TLS and webhooks need an authorized operator and explicit owner approval. The package and its CI are not evidence of a live deployment; the deployment contract records the current status. Locally, `RUN.cmd` checks and serves the website on `127.0.0.1` the same way the static container publishes it: no hidden files, case-sensitive paths.
 
 ## Verification, agent workflow and present limits
 
@@ -384,15 +400,16 @@ Every checkup lives under `.template/maintenance/helpers/checkups/`:
 
 | Checkup file | Exact scope |
 |---|---|
-| `01-runnables.ps1` | Discover runnable files, parse/syntax-check them, exercise no-op PowerShell/CLI entrypoints and the Windows selector wrapper. |
-| `02-documentation.ps1` | Exact-case Markdown/HTML links, current names/layout, README freshness/escaping, icon paths, CI references, runtime ignore boundaries, and issue-form structure with the private-reporting link. |
+| `01-runnables.ps1` | Discover runnable files, parse/syntax-check them, exercise no-op PowerShell/CLI entrypoints and the Windows wrappers (selector and `RUN.cmd`). |
+| `02-documentation.ps1` | Current names and layout (including the root CLI and the CRLF `RUN.cmd` launcher), README freshness/escaping, icon paths, CI references, runtime ignore boundaries, and issue-form structure with the private-reporting link. |
 | `03-project-types.ps1` | Preset JSON/ESM syntax; individual/combined preview/apply/rerun/conflict/path checks with source preservation. |
 | `04-copilot-setup.ps1` | Settings results/exit codes, backups, existing guides, previews, reruns and completion in isolated project/profile fixtures. |
 | `05-storage.ps1` | Policy validation, size/age boundaries, pruning order, live/protected archives, space/log warnings and audit report generation. |
 | `06-design-collection.ps1` | Generated collection freshness/content/links/contrast and five-theme exports using disposable outputs; browser review remains separate. |
 | `07-soft-copy.ps1` | Selected-file copies, conflict pairs, force previews/refusals, path boundaries and recovery, including Windows 8.3 short-path forms; Windows additionally exercises GUI controls. |
-| `08-script-icons.ps1` | Branded Windows shortcuts in disposable fixtures on available PowerShell hosts: COM targets, arguments, working directories, icon integrity, source preservation, inventories, safe modes and conflict/link refusal; other platforms check the explicit unsupported-platform error. |
-| `09-claim-template.ps1` | One-time adoption in disposable full copies: placeholder-free shipped config, refusals without changes, Git and manual provenance, clean audit trail and example-only work queue, commit-pinned evidence links, regenerated outputs, the adopted copy's own documentation check, broken-link reporting, unchanged reruns, the select-only menu and generated-config validation, on each available PowerShell host. |
+| `08-script-icons.ps1` | Branded Windows shortcuts in disposable fixtures on available PowerShell hosts: COM targets, arguments, working directories, icon integrity, source preservation, inventories, safe modes and conflict/link refusal, a 160-character root and an explicitly skipped shortcut beyond the 259-character Windows limit; other platforms check the explicit unsupported-platform error. |
+| `09-template-integrity.ps1` | Release metadata (changelog, archive stamp, version labels); every link and literal path with rule units and a mutated copy; and adoption against a disposable upstream: refusals without changes (placeholders, typed lists, missing, short, unknown or unpublished commits, referenced removals), manual, clone, GitHub template copy and archive provenance, clean audit trail and work queue, pinned evidence links, regenerated outputs, unchanged reruns, the select-only menu and generated-config validation, on each available PowerShell host. |
+| `10-run.ps1` | RUN.cmd and `up`: on Windows the verified runtime download through a local mirror (refusal without consent, checksum mismatch, install, reuse); then cached and repeated checks, failures that stop before starting, a script program with `PORT`, a busy port, and a preview server without hidden files, traversal or wrong casing. |
 
 Real-action checks use new disposable directories and isolated profiles. They do not run product package scripts or clean live runtime data. New checkups must preserve that boundary.
 
@@ -403,6 +420,19 @@ Agents inspect the real Git state and task, implement only scoped changes, recor
 After closing a claimed item, agents take the next eligible task within the owner's approved scope. They stop when that scope is complete, the owner pauses it or a concrete blocker remains. The scheduler's Agent Review column is optional and used only when the owner requests a review: record fixes and actual verification, then create or update a deduplicated follow-up with a backlink for every unresolved finding. A follow-up records remaining work; it does not grant permission to implement additional scope.
 
 The template does not install a product, database, cloud resource, deployment destination, secret, system scheduler, editor extension or account connection. Selected tools can deliberately write settings, copy files, remove approved adoption paths, archive originals or permanently prune recovery ZIPs: choose the narrow tool and review its plan. Verify the actual product runtime, Docker build, health checks, credentials and deployment contract before adding production automation. Preserve existing user work and historical evidence when adopting or maintaining the template.
+
+## Release the template
+
+A release is an annotated `vMAJOR.MINOR.PATCH` tag on a commit whose release checks passed ([Semantic Versioning](https://semver.org/)). Any other commit is a development build: `node moorkyz version` and adoption records name it by its commit and its distance from the last release, never by a version it does not have.
+
+1. On Windows, run the full maintenance with both PowerShell hosts available, once with the normal `TEMP` and once with a `TEMP` path longer than 100 characters. Every checkup must pass, including the Template Integrity and run checkups.
+2. Run `RUN.cmd` in a fresh clone; it must reach the running template website.
+3. Add the release to the top of [.template/CHANGELOG.md](.template/CHANGELOG.md) (`## vX.Y.Z — YYYY-MM-DD`) in the release commit, and record the checks in the task audit.
+4. With the owner's approval, push the commit and wait until GitHub CI passes on Ubuntu and Windows.
+5. Tag that commit (`git tag -a vX.Y.Z -m "moorkyz-template vX.Y.Z"`) and push the tag. CI runs again for the tag and checks that the changelog describes it.
+6. In a fresh clone at the tag, `node moorkyz version` and `CreateProject.ps1 -WhatIf` must show the tag; `-TemplateCommit` with an unknown SHA must be refused.
+
+Never move or reuse a published tag; fix forward with a new patch release.
 
 ## Deliberate decisions to preserve
 
@@ -418,6 +448,10 @@ These choices were made on purpose; change them only with the owner, and record 
 | Recoverable deletion uses verified ZIP archives, not a trash folder; `.logs/`, `.archive/` and `.moorkyz/` stay ignored; audits stay tracked in `.audits/` | Bounded storage with explicit retention, and evidence that travels with the code | [Archive retention and audit history](.audits/2026-10-23T21-14-08Z-archive-retention-and-hidden-audit-history.md) |
 | Soft copy preserves differing files unless forced, and can revert from local snapshots | Existing work is never overwritten silently | [Soft copy](.audits/2026-10-23T21-33-23Z-soft-copy-template-files-with-lightweight-gui.md), [revert](.audits/2026-10-23T21-57-57Z-revert-template-copies-from-saved-originals.md) |
 | Adopted projects start their own audit trail with template provenance; the adoption config ships without placeholder text and creation stays configuration-driven | Owner decisions of 2026-10-29: template history stays in the template, the project records repository, version and commit, and no references to removed paths remain | [Adoption decisions](.audits/2026-10-29T02-10-54Z-adoption-audit-trail-and-typed-setup-defaults.md) |
+| `RUN.cmd` is the one-step launcher at the root; its logic lives in `moorkyz up`, and each step repeats only when its inputs changed | Owner request: one run from a fresh copy to the program; the CLI keeps it testable and available on every platform | [Release v1.0.0](.audits/2026-10-29T09-39-12Z-release-v1-0-0-one-step-run-and-verified-provenance.md) |
+| Runtimes are downloaded only with consent, from the official source, and only after their SHA-256 matches | A launcher must not install unverified software silently | [Release v1.0.0](.audits/2026-10-29T09-39-12Z-release-v1-0-0-one-step-run-and-verified-provenance.md) |
+| Template commits are always verified in the template repository; nothing is guessed, and releases are tags with changelog entries | Wrong provenance produces wrong links and misleading versions | [Release v1.0.0](.audits/2026-10-29T09-39-12Z-release-v1-0-0-one-step-run-and-verified-provenance.md) |
+| One reference engine in the CLI checks docs, configuration and source; dynamic paths are reported, not guessed | One source of truth for maintenance, adoption and `up` | [Release v1.0.0](.audits/2026-10-29T09-39-12Z-release-v1-0-0-one-step-run-and-verified-provenance.md) |
 | The public website presents the templates, not tools or services | Owner direction for Moorkyz Templates | [Template-only branding](.audits/2026-10-25T12-51-14Z-template-only-showcase-branding.md) |
 | Work follows four phases with ordered Clean Up gates; passing checks never imply approval | Honest evidence and human control of external actions | [Work phases](.audits/2026-10-25T14-48-38Z-clarify-work-phases-and-cleanup-quality-gates.md) |
 | Script icons are shortcuts; scripts and executables are never modified | Windows cannot embed icons in scripts, and signatures stay intact | [Script icons](.audits/2026-10-25T15-54-22Z-add-safe-moorkyz-script-icons.md) |
@@ -428,11 +462,14 @@ These choices were made on purpose; change them only with the owner, and record 
 - **Long, interactive checks.** The full runner takes several minutes; on Windows, `07-soft-copy.ps1` drives real windows inside disposable fixtures. Use `-NoPause` in automation and do not interact with the test windows.
 - **Windows short paths.** GitHub's Windows runners use an 8.3 short `TEMP` path (`C:\Users\RUNNER~1\...`). `[IO.Path]::GetFullPath` expands short names; PowerShell provider paths and `Split-Path` do not. Normalize both sides before comparing paths in scripts and checks.
 - **README rendering.** `node moorkyz readme`, the README editions and themed exports render headings, paragraphs, links and code; tables and lists appear as plain text.
-- **Adoption config.** `setup.config.json` ships with empty names and empty lists, so a first run lists what to fill in; see the [adoption route](#choose-the-appropriate-adoption-route). Copies without the template's Git history need `-TemplateCommit`.
-- **Removing folders.** The link check covers every Markdown and HTML file, including retained audits and README editions, and adoption refuses to remove a path that remaining files still link to or mention. Remove an area only together with every reference and its checkup or workflow; otherwise keep it.
+- **Adoption config.** `setup.config.json` ships with empty names and empty lists, so a first run lists what to fill in; see the [adoption route](#choose-the-appropriate-adoption-route). The first adoption needs Git and network access once to verify the template commit; copies that are not clones, GitHub template copies or GitHub ZIP downloads need `-TemplateCommit`.
+- **Removing folders.** The reference check covers links and literal paths in every supported file type, including retained audits and README editions, and adoption refuses to remove a path that remaining files still link to, mention or name. Paths built at run time cannot be checked statically: `node moorkyz references --unverified` lists them. Remove an area only together with every reference and its checkup or workflow; otherwise keep it.
+- **RUN.cmd keeps running.** It serves or runs the program in the foreground until Ctrl+C or the window closes, so it is not a check. Agents and CI use `node moorkyz up --no-start`. After Ctrl+C, Windows may ask "Terminate batch job (Y/N)?"; either answer ends it.
+- **Hardened Git and PowerShell setups.** With `safe.bareRepository=explicit`, Git refuses implicit bare repositories; tools address them with `--git-dir`. Windows PowerShell started from a PowerShell 7 session inherits its module path and can miss commands; RUN.cmd clears it, and new wrappers should do the same.
+- **Long Windows paths.** Windows shortcuts and Explorer stop at 259 characters; script icons skip longer ones with a reason. Keep repositories in short folders when you use them.
 - **Copilot setup scope.** The default `-Scope Both` also changes your user-level VS Code settings: default model, autopilot, notifications and terminal command auto-approval with deny rules. Use `-Scope Project` for repository-only changes and preview with `-WhatIf`.
 - **Coordination.** The queue is text, not a lock, and claims can go stale. Check `git status`, file ages and the owner before touching files that someone else claimed.
 - **Sensitive recovery data.** Soft-copy reports and recovery snapshots in `.moorkyz/soft-copy/` contain file contents. ZIP archives are compressed, not encrypted, and retention deletes them permanently.
-- **No product runtime.** `moorkyz start`, `verify`, `install` and the other package commands need a Node `package.json`; the template root has none. Without a declaration the CLI assumes pnpm, while the `node` preset declares npm: choose deliberately.
+- **No product runtime.** `moorkyz start`, `verify`, `install` and the other package commands need a Node `package.json`; the template root has none, and its `moorkyz.config.json` describes the website as a static program for `up`. Without a declaration the CLI assumes pnpm, while the `node` preset declares npm: choose deliberately.
 - **Line endings.** Git stores text with LF; `.cmd` and `.bat` keep CRLF. Git's CRLF conversion warnings on Windows are expected.
 - **Scope of the checks.** Maintenance is not a security review, product test suite, accessibility audit or deployment check. Browser, screen-reader and production verification remain separate.

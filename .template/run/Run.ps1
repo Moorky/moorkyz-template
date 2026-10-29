@@ -44,6 +44,8 @@ if ($DryRun) {
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+# Callers such as Claim Template may run with -WhatIf; providing the runtime is never simulated.
+$WhatIfPreference = $false
 $root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $cli = Join-Path $root 'moorkyz'
 $mirror = if ($env:MOORKYZ_NODE_MIRROR) { $env:MOORKYZ_NODE_MIRROR.TrimEnd('/') } else { 'https://nodejs.org/dist' }

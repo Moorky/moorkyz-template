@@ -46,6 +46,11 @@ fs.writeFileSync(gitconfig, [
 ].join("\n"));
 process.env.GIT_CONFIG_GLOBAL = gitconfig;
 process.env.GIT_CONFIG_NOSYSTEM = "1";
+// A dedicated temporary folder shows whether adoption cleans up after itself, also with -WhatIf.
+const scratch = path.join(workspace, "temp");
+fs.mkdirSync(scratch);
+process.env.TEMP = scratch;
+process.env.TMP = scratch;
 
 function copyTemplate(name) {
   const directory = path.join(workspace, name);
@@ -131,7 +136,8 @@ try {
   }
   assert.ok(fs.readFileSync(path.join(root, ".gitattributes"), "utf8").split(/\r?\n/)
     .includes(".template/claim-template/helpers/template-commit.txt export-subst"), "GitHub downloads must record their template commit.");
-  assert.equal(fs.readFileSync(path.join(root, setup, "helpers", "template-commit.txt"), "utf8"), "$Format:%H$\n");
+  // The placeholder in Git checkouts; GitHub ZIP downloads contain the filled-in commit instead.
+  assert.match(fs.readFileSync(path.join(root, setup, "helpers", "template-commit.txt"), "utf8"), /^(?:\$Format:%H\$|[0-9a-f]{40})\n$/);
   const labels = path.join(workspace, "labels");
   fs.mkdirSync(labels);
   assert.equal(cli.versionLabel(labels), "no Git history");
@@ -406,6 +412,8 @@ $source += @'
   groups++;
 '@
 $source += @'
+  assert.deepEqual(fs.readdirSync(scratch).filter((name) => name.startsWith("moorkyz-template-")), [],
+    "Claim Template must remove its temporary template history, also after -WhatIf.");
   console.log(`PASS: ${groups} template integrity groups; all actions used disposable copies and a disposable upstream.`);
 } finally {
   fs.rmSync(workspace, { recursive: true, force: true });

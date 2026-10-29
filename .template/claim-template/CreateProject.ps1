@@ -278,7 +278,7 @@ function Get-UpstreamHistory {
     $ErrorActionPreference = 'Continue'
     $output = @(& $git.Source clone --bare --quiet --filter=tree:0 "$templateUrl.git" $directory 2>&1)
     if ($LASTEXITCODE) {
-        Remove-Item -LiteralPath $directory -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $directory -Recurse -Force -ErrorAction SilentlyContinue -WhatIf:$false
         throw "Cannot read $templateUrl to verify which template commit this copy came from ($((@($output | ForEach-Object { "$_" }) -join ' ').Trim())). Check the network connection, then run again."
     }
     $order = New-Object System.Collections.Generic.List[string]
@@ -293,7 +293,7 @@ function Get-UpstreamHistory {
         }
     }
     if (-not $order.Count) {
-        Remove-Item -LiteralPath $directory -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $directory -Recurse -Force -ErrorAction SilentlyContinue -WhatIf:$false
         throw "$templateUrl returned no commits, so this copy's template commit cannot be verified."
     }
     [pscustomobject]@{ Directory = $directory; Order = $order.ToArray(); Trees = $trees }
@@ -372,7 +372,7 @@ function Get-TemplateProvenance {
             Source = $found.Source
         }
     }
-    finally { Remove-Item -LiteralPath $history.Directory -Recurse -Force -ErrorAction SilentlyContinue }
+    finally { Remove-Item -LiteralPath $history.Directory -Recurse -Force -ErrorAction SilentlyContinue -WhatIf:$false }
 }
 
 function Get-AuditHistory {

@@ -27,6 +27,8 @@ function Assert-CopyPath([string]$Path) {
 }
 
 function Get-TemplateCopyFiles([string]$Root) {
+    # Enumerated FullName values are expanded long paths; normalize 8.3 short roots the same way.
+    $Root = [IO.Path]::GetFullPath($Root)
     Assert-CopyPath $Root
     $excluded = '.git', '.moorkyz', '.logs', '.archive', '.audits', 'node_modules',
         'coverage', 'dist', 'build', 'tmp', '.tmp', '.idea', '.vs', '.venv', '__pycache__'

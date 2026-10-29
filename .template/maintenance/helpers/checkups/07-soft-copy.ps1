@@ -40,6 +40,7 @@ const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "moorkyz soft copy "));
 const quote = (value) => `'${value.replaceAll("'", "''")}'`;
 let sequence = 0;
 let groups = 0;
+let shortAliases = 0;
 function write(filename, content) {
   fs.mkdirSync(path.dirname(filename), { recursive: true });
   fs.writeFileSync(filename, content);
@@ -98,6 +99,15 @@ function revert(engine, f, recovery, flags = "", target = f.target) {
   return invoke(engine, f, null, "", target,
     `& ${quote(f.entry)} -TargetDirectory ${quote(target)} -Revert ${quote(recovery)} ${flags}`);
 }
+// GitHub's Windows runners use an 8.3 short TEMP path; revert must accept either form.
+function shortAlias(filename) {
+  if (process.platform !== "win32") return null;
+  const result = spawnSync(process.env.ComSpec || "cmd.exe",
+    ["/d", "/s", "/c", `"for %I in ("${filename}") do @echo %~sI"`],
+    { encoding: "utf8", windowsVerbatimArguments: true });
+  const alias = result.status === 0 ? result.stdout.trim() : "";
+  return alias && alias.toLowerCase() !== filename.toLowerCase() ? alias : null;
+}
 function unchangedFailure(engine, f, files, flags, target, pattern) {
   const before = snapshot(f.directory);
   failure(invoke(engine, f, files, flags, target), pattern);
@@ -122,11 +132,21 @@ try {
     let journal = JSON.parse(fs.readFileSync(recovery));
     assert.equal(journal.status, "ready");
     assert.equal(journal.files.length, 2);
+    const recoveryAlias = shortAlias(recovery);
+    const targetAlias = shortAlias(f.target);
+    const sourceAlias = shortAlias(f.source);
+    if (recoveryAlias) shortAliases++;
+    if (sourceAlias) {
+      const core = path.join(path.dirname(f.entry), "helpers", "CopyCore.ps1");
+      success(invoke(engine, f, null, "", f.target, `. ${quote(core)};
+        $long = @(Get-TemplateCopyFiles ${quote(f.source)}) -join '|'; $short = @(Get-TemplateCopyFiles ${quote(sourceAlias)}) -join '|';
+        if (-not $long -or $long -cne $short) { throw "Short template root changed file names: $short" }`));
+    }
     before = snapshot(f.directory);
-    success(revert(engine, f, recovery, "-WhatIf"));
+    success(revert(engine, f, recoveryAlias || recovery, "-WhatIf", targetAlias || f.target));
     success(revert(engine, f, "missing-snapshot", "-DryRun", "missing-target"));
     assert.deepEqual(snapshot(f.directory), before, "Revert preview/dry run changed files.");
-    success(revert(engine, f, recovery));
+    success(revert(engine, f, recoveryAlias || recovery, "", targetAlias || f.target));
     assert.deepEqual(snapshot(f.target), beforeCopy);
     assert.equal(JSON.parse(fs.readFileSync(recovery)).status, "reverted");
     assert.equal(reports(f).length, 1, "Revert changed the original conflict report.");
@@ -230,7 +250,7 @@ try {
       $global:originalPathCheck = \${function:Assert-CopyPath}; $global:destinationChecks = 0;
       function Assert-CopyPath([string]$Path) {
         & $global:originalPathCheck $Path;
-        if ($Path -eq ${quote(blockedFile)}) {
+        if ([IO.Path]::GetFullPath($Path) -eq [IO.Path]::GetFullPath(${quote(blockedFile)})) {
           $global:destinationChecks++;
           if ($global:destinationChecks -eq 2) {
             [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($Path));
@@ -312,7 +332,7 @@ try {
       $global:checkPath = \${function:Assert-CopyPath};
       function Assert-CopyPath([string]$Path) {
         & $global:checkPath $Path;
-        if ($Path -eq ${quote(failedDirectory)}) { [IO.File]::WriteAllText($Path,'directory blocker') }
+        if ([IO.Path]::GetFullPath($Path) -eq [IO.Path]::GetFullPath(${quote(failedDirectory)})) { [IO.File]::WriteAllText($Path,'directory blocker') }
       }
       try { Invoke-TemplateCopyPlan $plan; throw 'Expected directory failure' }
       catch { if (-not $_.Exception.Data.Contains('RecoveryPath')) { throw }; 'PASS: directory failure did not claim ownership' }
@@ -339,7 +359,7 @@ try {
       $global:checkPath = \${function:Assert-CopyPath}; $global:undoChecks = 0;
       function Assert-CopyPath([string]$Path) {
         & $global:checkPath $Path;
-        if ($Path -eq ${quote(secondFile)}) {
+        if ([IO.Path]::GetFullPath($Path) -eq [IO.Path]::GetFullPath(${quote(secondFile)})) {
           $global:undoChecks++;
           if ($global:undoChecks -eq 2) { [IO.File]::WriteAllText($Path,'edited just before second restore') }
         }
@@ -633,6 +653,9 @@ try {
     console.log(`PASS: soft-copy action and GUI regression groups on ${label}.`);
   }
   assert.deepEqual(snapshot(tool), originalTool, "Live tool files changed during checkups.");
+  console.log(shortAliases
+    ? `PASS: ${shortAliases} revert(s) accepted 8.3 short recovery and target paths.`
+    : "SKIP: 8.3 short names unavailable here; a short TEMP path (GitHub Windows runners) covers them.");
   console.log(`PASS: ${groups} soft-copy regression groups; all copies and reports used disposable fixtures.`);
 } finally {
   fs.rmSync(workspace, { recursive: true, force: true });

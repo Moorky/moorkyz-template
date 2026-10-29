@@ -62,7 +62,8 @@ function New-TemplateRevertPlan([string]$Root, [string]$TargetDirectory, [string
     $target = Get-CopyTargetRoot $Root $TargetDirectory
     $rootPath = [IO.Path]::GetFullPath($Root).TrimEnd('\', '/')
     if ([string]::IsNullOrWhiteSpace($RecoveryPath)) { throw 'Choose a recovery snapshot.' }
-    $path = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($RecoveryPath)
+    # GetFullPath expands 8.3 short names (e.g. GitHub's Windows TEMP), matching $rootPath.
+    $path = [IO.Path]::GetFullPath($ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($RecoveryPath))
     $directory = Join-Path $rootPath '.moorkyz\soft-copy'
     if ((Split-Path -Parent $path) -ne $directory -or
         [IO.Path]::GetFileName($path) -notmatch '^recovery-\d{8}T\d{9}Z-[a-f0-9]{32}\.json$') {
